@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup } from "./firebase";
+import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
@@ -4326,7 +4326,16 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
 function BackupsPanel({ askConfirm }) {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [fixing, setFixing] = useState(false);
+
+  const doFix = async () => {
+    setFixing(true); setMsg(null);
+    try {
+      const res = await fixRecoveredIds();
+      setMsg({ type: "ok", text: `✅ ${res.fixedOrders} commande(s) corrigée(s), ${res.fixedItems} article(s) mis à jour. Recharge l'app pour vérifier.` });
+    } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec") }); }
+    setFixing(false);
+  };
   const [restoring, setRestoring] = useState(null);
   const [msg, setMsg] = useState(null); // { type: "ok"|"err", text }
 
@@ -4375,6 +4384,12 @@ function BackupsPanel({ askConfirm }) {
         <Btn variant="primary" onClick={doBackup} disabled={saving} style={{ width: "100%" }}>
           {saving ? "⏳ Sauvegarde en cours..." : "💾 Sauvegarder maintenant"}
         </Btn>
+        <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 12, marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>🔧 Maintenance — corrige les articles "recovered_xxx" dans les commandes restaurées depuis le Sheet :</div>
+          <Btn variant="secondary" onClick={doFix} disabled={fixing} style={{ width: "100%" }}>
+            {fixing ? "⏳ Correction en cours..." : "🔧 Corriger les articles manquants (recovered_xxx)"}
+          </Btn>
+        </div>
       </Card>
 
       {msg && <div style={{ background: msg.type === "ok" ? "#d1fae5" : "#fef2f2", color: msg.type === "ok" ? "#065f46" : "#b91c1c", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 700 }}>{msg.text}</div>}

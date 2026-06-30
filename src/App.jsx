@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.34.1 — correctif articles recovered_xxx via Cloud Function depuis Réglages → Sauvegardes (30/06/2026)";
+const APP_VERSION = "v3.34.2 — correctif crash clientName null + import commandes propres (30/06/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -476,7 +476,7 @@ function extractNewClientsFromOrders(orderList, existingClients) {
   const toAdd = [];
   for (const o of (orderList || [])) {
     if (!o.clientName) continue;
-    const key = `${o.clientName.toLowerCase()}|${o.clientPhone || ""}`;
+    const key = `${(o.clientName || "").toLowerCase()}|${o.clientPhone || ""}`;
     if (existingKeys.has(key) || seen.has(key)) continue;
     seen.add(key);
     const phones = (o.clientPhones && o.clientPhones.length ? o.clientPhones : (o.clientPhone ? [o.clientPhone] : [])).filter(Boolean);
@@ -4689,7 +4689,7 @@ function AppInner() {
       if (filterStatus === "Toutes" && (o.status === "Brouillon" || o.status === "Devis")) return false; // masqués par défaut, voir "Devis en attente"
       return (filterStatus === "Toutes" || o.status === filterStatus);
     })
-    .filter(o => (o.clientName.toLowerCase().includes(searchQ.toLowerCase()) || o.id.toLowerCase().includes(searchQ.toLowerCase())) && (quickFilter !== "aPreparer" || isAPreparer(o)))
+    .filter(o => ((o.clientName || "").toLowerCase().includes(searchQ.toLowerCase()) || (o.id || "").toLowerCase().includes(searchQ.toLowerCase())) && (quickFilter !== "aPreparer" || isAPreparer(o)))
     .sort((a, b) => {
       const aOpen = a.status !== "Clôturée", bOpen = b.status !== "Clôturée";
       if (aOpen !== bOpen) return aOpen ? -1 : 1; // non clôturées toujours en premier

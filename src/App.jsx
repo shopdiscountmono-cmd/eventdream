@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.2 — recherche croisée doublons clients (téléphone, email, nom similaire) (01/07/2026)";
+const APP_VERSION = "v3.36.3 — correctif crash saving + recherche croisée doublons clients (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -4357,9 +4357,10 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
 function BackupsPanel({ askConfirm }) {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [dupGroups, setDupGroups] = useState(null); // résultats de la recherche
-  const [findingDups, setFindingDups] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [fixing, setFixing] = useState(false);
+  const [findingDups, setFindingDups] = useState(false);
+  const [dupGroups, setDupGroups] = useState(null);
   const [restoring, setRestoring] = useState(null);
   const [msg, setMsg] = useState(null); // { type: "ok"|"err", text }
 

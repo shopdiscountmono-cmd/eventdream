@@ -708,6 +708,43 @@ exports.findDuplicateClients = onCall({ region: REGION }, async (request) => {
   };
 });
 
+// Fusionne un groupe spécifique de clients (identifiés par leurs IDs) en un seul.
+// Le premier ID est le client "maître" qui conserve son nom.
+exports.mergeSpecificClients = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
+  const { clientIds } = request.data || {};
+  if (!Array.isArray(clientIds) || clientIds.length < 2) throw new HttpsError("invalid-argument", "Au moins 2 IDs requis.");
+
+  const snap = await db.collection("app").doc("clients").get();
+  const clients = snap.data().value || [];
+
+  const targets = clientIds.map(id => clients.find(c => c.id === id)).filter(Boolean);
+  if (targets.length < 2) throw new HttpsError("not-found", "Clients introuvables.");
+
+  // Fusion : le premier client est le maître, les autres sont absorbés
+  const master = { ...targets[0] };
+  const normPhone = (s) => (s || "").replace(/[\s\-\.]/g, "").replace(/^(\+33|0033)/, "0").trim();
+
+  for (let i = 1; i < targets.length; i++) {
+    const other = targets[i];
+    const existingPhones = [...(master.phones || []), master.phone || ""].map(normPhone).filter(Boolean);
+    const otherPhones = [...(other.phones || []), other.phone || ""].map(normPhone).filter(Boolean);
+    master.phones = [...new Set([...existingPhones, ...otherPhones])].filter(Boolean);
+    const existingAddresses = [...(master.addresses || []), master.address || ""].filter(Boolean);
+    const otherAddresses = [...(other.addresses || []), other.address || ""].filter(Boolean);
+    master.addresses = [...new Set([...existingAddresses, ...otherAddresses])].filter(Boolean);
+    if (!master.email && other.email) master.email = other.email;
+    if (!master.notes && other.notes) master.notes = other.notes;
+  }
+
+  // Supprimer les clients absorbés et remplacer le maître
+  const mergedIds = new Set(clientIds.slice(1));
+  const updated = clients.filter(c => !mergedIds.has(c.id)).map(c => c.id === master.id ? master : c);
+  await db.collection("app").doc("clients").set({ value: updated });
+  logger.info(`mergeSpecificClients : fusionné ${clientIds.length} clients → 1 (maître: ${master.id})`);
+  return { success: true, masterId: master.id, masterName: master.name };
+});
+
 // ───────────────────────────────────────────────────────────
 // 8) Déduplication des clients (supprime les doublons par nom)
 // ───────────────────────────────────────────────────────────

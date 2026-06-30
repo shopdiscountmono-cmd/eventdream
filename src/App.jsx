@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.35.0 — revenus lavage dans Comptabilité → Synthèse + fusion kit couvert (01/07/2026)";
+const APP_VERSION = "v3.36.0 — flux statuts simplifié (5 étapes) + affichage retour/casse pleine largeur mobile (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -226,8 +226,8 @@ const DEFAULT_SETTINGS = {
   notifRetourDelais: [24],
 };
 
-const STATUS_FLOW = ["Brouillon", "Devis", "Confirmée", "Préparée", "En livraison", "Livrée", "En cours", "Retour", "Clôturée"];
-const STATUS_COLORS = { "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "En livraison": "#f97316", "Livrée": "#10b981", "En cours": "#06b6d4", "Retour": "#ef4444", "Clôturée": "#6b7280" };
+const STATUS_FLOW = ["Confirmée", "Préparée", "Chez le client", "Clôturée"];
+const STATUS_COLORS = { "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "Chez le client": "#10b981", "Clôturée": "#6b7280" };
 const EXPENSE_CATEGORIES = ["Achat matériel", "Maintenance / Réparation", "Carburant", "Loyer / Entrepôt", "Salaires", "Fournitures", "Assurance", "Autre"];
 const CAT_COLORS = { "Achat matériel": "#3b82f6", "Maintenance / Réparation": "#8b5cf6", "Carburant": "#f97316", "Loyer / Entrepôt": "#ef4444", "Salaires": "#10b981", "Fournitures": "#f59e0b", "Assurance": "#06b6d4", "Autre": "#6b7280" };
 const ICON_LIBRARY = ["🪑","💺","⭕","▬","🟦","🍽️","🍴","🔪","🥄","🍷","🥛","🍾","🥂","☕","🫖","🍶","🔥","⛺","🎪","🎉","🎈","🎀","🕯️","💡","🔦","🪩","🎤","🔊","🎸","📽️","🖼️","🪞","🏳️","➿","🧺","🧻","🪟","🚪","🛋️","🛏️","🚽","🚿","❄️","🌡️","🔌","🔋","🧯","🪜","🛒","📦","🧊","🍳","🥘","🍲","🧁","🎂","🌸","🌹","🌿","🕺"];
@@ -2183,7 +2183,11 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
           )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
             <div style={{ background: "#fffbeb", borderRadius: 12, padding: 14, textAlign: "center" }}><div style={{ fontSize: 11, color: "#92400e", fontWeight: 700 }}>TOTAL</div><div style={{ fontSize: 18, fontWeight: 900, color: "#92400e" }}>{total.toFixed(2)} €</div></div>
-            <div style={{ background: "#f0fdf4", borderRadius: 12, padding: 14, textAlign: "center" }}><div style={{ fontSize: 11, color: "#065f46", fontWeight: 700 }}>ACOMPTE</div><div style={{ fontSize: 18, fontWeight: 900, color: "#065f46" }}>{parseFloat(order.acompte||0).toFixed(2)} €</div></div>
+            <div style={{ background: "#f0fdf4", borderRadius: 12, padding: 14, textAlign: "center" }}>
+              <div style={{ fontSize: 11, color: "#065f46", fontWeight: 700 }}>ACOMPTE</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#065f46" }}>{parseFloat(order.acompte||0).toFixed(2)} €</div>
+              {order.acompteMoyen && <div style={{ fontSize: 10, color: "#065f46", marginTop: 2, opacity: 0.8 }}>{{ paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" }[order.acompteMoyen]}</div>}
+            </div>
             <div style={{ background: reste > 0 ? "#fff7ed" : "#f0fdf4", borderRadius: 12, padding: 14, textAlign: "center" }}><div style={{ fontSize: 11, color: reste > 0 ? "#c2410c" : "#065f46", fontWeight: 700 }}>À ENCAISSER</div><div style={{ fontSize: 18, fontWeight: 900, color: reste > 0 ? "#c2410c" : "#065f46" }}>{reste.toFixed(2)} €</div></div>
           </div>
           {caution > 0 && (
@@ -2428,7 +2432,7 @@ function Dashboard({ orders, expenses, settings, setView, setQuickFilter }) {
   const prepLimit = (() => { const d = new Date(); d.setDate(d.getDate() + 4); return d.toISOString().split("T")[0]; })();
   const inPrepWindow = (date) => date && date >= TODAY && date <= prepLimit;
   const actives = orders.filter(o =>
-    !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status) &&
+    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status) &&
     inPrepWindow(o.deliveryDate)
   ).length;
   // Liste combinée des prochains événements : livraisons ET retours à venir.
@@ -2438,7 +2442,7 @@ function Dashboard({ orders, expenses, settings, setView, setQuickFilter }) {
       if (["Brouillon", "Devis", "Clôturée"].includes(o.status)) return;
       // Une fois la livraison/retrait effectué (phase passée en "retour"), on n'affiche plus
       // que l'étape retour. Avant ça, on n'affiche que l'étape départ — jamais les deux ensemble.
-      const dejaLivre = o.phase === "retour" || ["Livrée", "En cours", "Retour"].includes(o.status);
+      const dejaLivre = o.phase === "retour" || o.status === "Chez le client";
       if (!dejaLivre && o.deliveryDate && o.deliveryDate >= TODAY) {
         events.push({
           order: o, type: "depart", date: o.deliveryDate, time: o.deliveryTime,
@@ -2586,7 +2590,7 @@ function StockView({ orders, stock, setStock }) {
   const [newItem, setNewItem] = useState({ name: "", icon: "📦", category: "Équipements", unit: "unité", price: 0, coutAchat: 0, caution: 0, cleaningOption: false, cleaningPrice: 0, qtyCamion: 0, qtyLocal: 0, total: 0, seuil: 0, enMaintenance: 0, isKit: false, components: null });
   const [showInventory, setShowInventory] = useState(false);
 
-  const activeStatuses = ["Confirmée", "Préparée", "En livraison", "Livrée", "En cours"];
+  const activeStatuses = ["Confirmée", "Préparée", "Chez le client"];
   const stockSorti = useMemo(() => {
     const out = {};
     orders.filter(o => activeStatuses.includes(o.status)).forEach(o => {
@@ -3175,13 +3179,35 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
 
       {/* ── REVENUS ── */}
       {activeTab === "revenus" && (
+        <>
+        {/* Synthèse par moyen de paiement */}
+        <Card style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12 }}>💳 Acomptes encaissés par canal</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[
+              { key: "paypal", label: "💙 PayPal" }, { key: "virement", label: "🏦 Virement" },
+              { key: "especes", label: "💵 Espèces" }, { key: "cheque", label: "📄 Chèque" }, { key: "cb", label: "💳 CB" },
+            ].map(({ key, label }) => {
+              const total = orders.reduce((s, o) => o.acompteMoyen === key ? s + (parseFloat(o.acompte) || 0) : s, 0);
+              const count = orders.filter(o => o.acompteMoyen === key && (parseFloat(o.acompte) || 0) > 0).length;
+              if (total === 0) return null;
+              return (
+                <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#f8f9fa", borderRadius: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>{label}</span>
+                  <span style={{ fontSize: 13 }}><strong>{total.toFixed(2)} €</strong> <span style={{ color: "#999", fontSize: 11 }}>({count} commande{count > 1 ? "s" : ""})</span></span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
         <Card style={{ padding: 0, overflow: "hidden" }}>
          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#f8f9fa" }}>{["N° Commande", "Client", "Date", "Statut", "Acompte", "Total", "Reste"].map(h => <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 800, color: "#999", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+          <table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: "#f8f9fa" }}>{["N° Commande", "Client", "Date", "Statut", "Acompte", "Canal", "Total", "Reste"].map(h => <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 800, color: "#999", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>
               {[...orders].sort((a, b) => (b.deliveryDate || "").localeCompare(a.deliveryDate || "")).map((o, idx) => {
                 const t = orderTotal(o, settings); const a = parseFloat(o.acompte || 0); const r = t - a;
+                const MOYEN = { paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" };
                 return (
                   <tr key={o.id} style={{ borderTop: "1px solid #f0f0f0", background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
                     <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#666" }}>{o.id}</td>
@@ -3189,6 +3215,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
                     <td style={{ padding: "12px 16px", fontSize: 13, color: "#666" }}>{fmtD(o.deliveryDate) || "—"}</td>
                     <td style={{ padding: "12px 16px" }}><Badge status={o.status} /></td>
                     <td style={{ padding: "12px 16px", fontWeight: 700, color: "#3b82f6" }}>{a.toFixed(2)} €</td>
+                    <td style={{ padding: "12px 16px", fontSize: 12 }}>{o.acompteMoyen ? MOYEN[o.acompteMoyen] || o.acompteMoyen : "—"}</td>
                     <td style={{ padding: "12px 16px", fontWeight: 900, fontSize: 15 }}>{t.toFixed(2)} €</td>
                     <td style={{ padding: "12px 16px" }}><span style={{ fontWeight: 800, color: r > 0 ? "#f59e0b" : "#10b981" }}>{r <= 0 ? "✓ Soldé" : r.toFixed(2) + " €"}</span></td>
                   </tr>
@@ -3198,12 +3225,14 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
             <tfoot><tr style={{ background: "#f0fdf4", borderTop: "2px solid #d1fae5" }}>
               <td colSpan={4} style={{ padding: "12px 16px", fontWeight: 800 }}>TOTAL ({orders.length} commandes)</td>
               <td style={{ padding: "12px 16px", fontWeight: 800, color: "#3b82f6" }}>{totalAcomptes.toFixed(2)} €</td>
+              <td />
               <td style={{ padding: "12px 16px", fontWeight: 900, fontSize: 17, color: "#10b981" }}>{orders.reduce((s, o) => s + orderTotal(o, settings), 0).toFixed(2)} €</td>
               <td style={{ padding: "12px 16px", fontWeight: 800, color: "#f59e0b" }}>{orders.reduce((s, o) => s + orderTotal(o, settings) - parseFloat(o.acompte || 0), 0).toFixed(2)} €</td>
             </tr></tfoot>
           </table>
          </div>
         </Card>
+        </>
       )}
 
       {/* Modal gestion des catégories */}
@@ -3480,32 +3509,32 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
                       {r.prixCasseCustom != null && <button onClick={() => setPrixCasse(r.id, "")} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>↺ auto</button>}
                     </div>
                   </div>
-                  {/* Champs Rendu / Cassé côte à côte */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <div style={{ background: "#fff", borderRadius: 10, padding: "8px 10px", border: "2px solid #10b981" }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: "#10b981", textTransform: "uppercase", marginBottom: 4 }}>Rendu ✓</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue - 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
+                  {/* Champs Rendu / Cassé en colonne (pleine largeur sur mobile) */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "2px solid #10b981" }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#10b981", textTransform: "uppercase", marginBottom: 6 }}>Rendu ✓</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue - 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
                         <input type="text" inputMode="numeric"
                           value={r.qtyRendue === 0 ? "" : String(r.qtyRendue)}
                           placeholder="0"
                           onChange={e => setR(r.id, "qtyRendue", e.target.value)}
                           onFocus={e => e.target.select()}
-                          style={{ width: "100%", minWidth: 0, padding: "6px", borderRadius: 8, border: "none", background: "#f0fdf4", fontWeight: 800, fontSize: 16, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
-                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue + 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
+                          style={{ flex: 1, minWidth: 0, padding: "8px", borderRadius: 8, border: "none", background: "#f0fdf4", fontWeight: 900, fontSize: 22, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
+                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue + 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
                       </div>
                     </div>
-                    <div style={{ background: "#fff", borderRadius: 10, padding: "8px 10px", border: "2px solid #ef4444" }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", marginBottom: 4 }}>Cassé 💔</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse - 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
+                    <div style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "2px solid #ef4444" }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", marginBottom: 6 }}>Cassé 💔</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse - 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
                         <input type="text" inputMode="numeric"
                           value={r.qtyCasse === 0 ? "" : String(r.qtyCasse)}
                           placeholder="0"
                           onChange={e => setR(r.id, "qtyCasse", e.target.value)}
                           onFocus={e => e.target.select()}
-                          style={{ width: "100%", minWidth: 0, padding: "6px", borderRadius: 8, border: "none", background: "#fee2e2", fontWeight: 800, fontSize: 16, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
-                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse + 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
+                          style={{ flex: 1, minWidth: 0, padding: "8px", borderRadius: 8, border: "none", background: "#fee2e2", fontWeight: 900, fontSize: 22, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
+                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse + 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
                       </div>
                     </div>
                   </div>
@@ -4617,7 +4646,7 @@ function AppInner() {
   const updateStatus = (id, status) => setOrders(prev => prev.map(o => {
     if (o.id !== id) return o;
     // Passage automatique en phase retour quand livré
-    const phase = ["Livrée", "En cours", "Retour"].includes(status) ? "retour" : status === "Clôturée" ? "termine" : "livraison";
+    const phase = ["Chez le client"].includes(status) ? "retour" : status === "Clôturée" ? "termine" : "livraison";
     // Mémorise la date de clôture (référence pour la suppression auto des photos après X jours)
     const closedAt = status === "Clôturée" && !o.closedAt ? new Date().toISOString() : o.closedAt;
     return { ...o, status, phase, closedAt };
@@ -4643,7 +4672,7 @@ function AppInner() {
   const confirmDelivery = (orderId, data) => setOrders(prev => prev.map(o => {
     if (o.id !== orderId) return o;
     return {
-      ...o, status: "Livrée", phase: "retour",
+      ...o, status: "Chez le client", phase: "retour",
       deliveryComment: data.comment, deliveryPhotos: data.photos || [], deliverySignature: data.signature || "",
       deliverySignedBy: data.signedBy || "", deliverySignedAt: data.signedAt || "",
     };
@@ -4684,7 +4713,7 @@ function AppInner() {
   };
 
   const prepLimitNav = (() => { const d = new Date(); d.setDate(d.getDate() + 4); return d.toISOString().split("T")[0]; })();
-  const isAPreparer = (o) => !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status) && o.deliveryDate && o.deliveryDate >= TODAY && o.deliveryDate <= prepLimitNav;
+  const isAPreparer = (o) => !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status) && o.deliveryDate && o.deliveryDate >= TODAY && o.deliveryDate <= prepLimitNav;
   const filtered = useMemo(() => orders
     .filter(o => {
       if (view === "devisEnAttente") return o.status === "Brouillon" || o.status === "Devis";
@@ -4709,12 +4738,12 @@ function AppInner() {
   // Commandes à livrer : mode livraison, prêtes/confirmées, pas encore livrées
   const aLivrerCount = useMemo(() => orders.filter(o =>
     o.deliveryMode === "livraison" &&
-    !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status)
+    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status)
   ).length, [orders]);
   // Commandes à retirer au local : mode retrait, prêtes/confirmées, pas encore récupérées
   const aRetirerCount = useMemo(() => orders.filter(o =>
     o.deliveryMode === "retrait" &&
-    !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status)
+    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status)
   ).length, [orders]);
 
   const navItems = [
@@ -4882,6 +4911,8 @@ function AppInner() {
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
                         <div style={{ fontSize: 20, fontWeight: 900 }}>{total.toFixed(2)} €</div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: reste > 0 ? "#f59e0b" : "#10b981" }}>{reste > 0 ? `Reste : ${reste.toFixed(2)} €` : "✓ Soldé"}</div>
+                        {parseFloat(order.acompte||0) > 0 && order.acompteMoyen && <div style={{ fontSize: 10, color: "#065f46", marginTop: 2 }}>Acompte {{ paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" }[order.acompteMoyen]}</div>}
+                        {order.cautionMoyen && <div style={{ fontSize: 10, color: "#6d28d9", marginTop: 1 }}>Caution {{ paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" }[order.cautionMoyen]}</div>}
                       </div>
                     </div>
                     {isExp && (<>

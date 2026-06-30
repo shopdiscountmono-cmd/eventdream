@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds } from "./firebase";
+import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.0 — flux statuts simplifié (5 étapes) + affichage retour/casse pleine largeur mobile (01/07/2026)";
+const APP_VERSION = "v3.36.1 — déduplication clients via Cloud Function depuis Réglages → Sauvegardes (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -4416,10 +4416,20 @@ function BackupsPanel({ askConfirm }) {
         <Btn variant="primary" onClick={doBackup} disabled={saving} style={{ width: "100%" }}>
           {saving ? "⏳ Sauvegarde en cours..." : "💾 Sauvegarder maintenant"}
         </Btn>
-        <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 12, marginTop: 4 }}>
-          <div style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>🔧 Maintenance — corrige les articles "recovered_xxx" dans les commandes restaurées depuis le Sheet :</div>
+        <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 12, marginTop: 4, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 12, color: "#999", marginBottom: 4 }}>🔧 Maintenance</div>
           <Btn variant="secondary" onClick={doFix} disabled={fixing} style={{ width: "100%" }}>
             {fixing ? "⏳ Correction en cours..." : "🔧 Corriger les articles manquants (recovered_xxx)"}
+          </Btn>
+          <Btn variant="secondary" onClick={async () => {
+            if (!(await askConfirm("Fusionner les clients en doublon ?\n\nLes clients avec le même nom seront fusionnés en un seul (téléphones et adresses conservés)."))) return;
+            setMsg(null);
+            try {
+              const res = await deduplicateClients();
+              setMsg({ type: "ok", text: `✅ ${res.before} clients → ${res.after} clients (${res.removed} doublons supprimés). Recharge l'app.` });
+            } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec") }); }
+          }} style={{ width: "100%" }}>
+            👥 Fusionner les clients en doublon
           </Btn>
         </div>
       </Card>

@@ -631,6 +631,46 @@ exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (r
 });
 
 // ───────────────────────────────────────────────────────────
+// 8) Déduplication des clients (supprime les doublons par nom)
+// ───────────────────────────────────────────────────────────
+exports.deduplicateClients = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
+  const rolesSnap = await db.collection("app").doc("userRoles").get();
+  const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
+  const email = (request.auth.token.email || "").toLowerCase();
+  if (roles[email] === "livreur") throw new HttpsError("permission-denied", "Réservé aux admins.");
+
+  const snap = await db.collection("app").doc("clients").get();
+  const clients = snap.data().value || [];
+  
+  // Garde le premier client pour chaque nom (en minuscules), fusionne téléphones/adresses
+  const seen = new Map();
+  let removed = 0;
+  
+  clients.forEach(c => {
+    const key = (c.name || "").toLowerCase().trim();
+    if (!key) return;
+    if (!seen.has(key)) {
+      seen.set(key, { ...c });
+    } else {
+      // Fusion : on enrichit le client existant avec les infos manquantes
+      const existing = seen.get(key);
+      const phones = [...new Set([...(existing.phones || [""]), ...(c.phones || [c.phone || ""].filter(Boolean))].filter(Boolean))];
+      const addresses = [...new Set([...(existing.addresses || [existing.address || ""].filter(Boolean)), ...(c.addresses || [c.address || ""].filter(Boolean))].filter(Boolean))];
+      if (phones.length) existing.phones = phones;
+      if (addresses.length) existing.addresses = addresses;
+      if (!existing.email && c.email) existing.email = c.email;
+      removed++;
+    }
+  });
+
+  const deduped = Array.from(seen.values());
+  await db.collection("app").doc("clients").set({ value: deduped });
+  logger.info(`Déduplication clients : ${clients.length} → ${deduped.length} (${removed} supprimés)`);
+  return { before: clients.length, after: deduped.length, removed };
+});
+
+// ───────────────────────────────────────────────────────────
 // 7) Correction ponctuelle des IDs "recovered_xxx" (résidu de la récupération Sheet)
 //    Remplace les IDs temporaires par les vrais IDs du stock.
 // ───────────────────────────────────────────────────────────

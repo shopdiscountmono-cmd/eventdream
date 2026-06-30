@@ -4326,7 +4326,10 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
 function BackupsPanel({ askConfirm }) {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [fixing, setFixing] = useState(false);
+  const [restoring, setRestoring] = useState(null);
+  const [msg, setMsg] = useState(null); // { type: "ok"|"err", text }
 
   const doFix = async () => {
     setFixing(true); setMsg(null);
@@ -4336,8 +4339,6 @@ function BackupsPanel({ askConfirm }) {
     } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec") }); }
     setFixing(false);
   };
-  const [restoring, setRestoring] = useState(null);
-  const [msg, setMsg] = useState(null); // { type: "ok"|"err", text }
 
   const loadBackups = async () => {
     setLoading(true);

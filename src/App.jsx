@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.34.2 — correctif crash clientName null + import commandes propres (30/06/2026)";
+const APP_VERSION = "v3.35.0 — revenus lavage dans Comptabilité → Synthèse + fusion kit couvert (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -2869,6 +2869,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
   const expensesP = expenses.filter(e => (!periodeActive || dansPeriode(e.date)) && (filterCatSynth === "Toutes" || e.category === filterCatSynth));
   const totalRevenu = revenueOrdersP.reduce((s, o) => s + orderTotal(o, settings), 0);
   const totalLivraison = revenueOrdersP.reduce((s, o) => s + deliveryCostOf(o, settings) + deliveryExtrasCost(o), 0);
+  const totalLavage = revenueOrdersP.reduce((s, o) => s + (o.items || []).reduce((si, i) => i.cleaningSelected ? si + (parseInt(i.qty) || 0) * (parseFloat(i.cleaningPrice) || 0) : si, 0), 0);
   const totalDepenses = expensesP.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
   const benefice = totalRevenu - totalDepenses;
   const totalAcomptes = (periodeActive ? orders.filter(o => dansPeriode(o.deliveryDate || o.returnDate)) : orders).reduce((s, o) => s + parseFloat(o.acompte || 0), 0);
@@ -2945,6 +2946,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
           { label: "Total dépenses", value: totalDepenses.toFixed(2) + " €", icon: "🛒", color: "#ef4444" },
           { label: "Bénéfice net", value: benefice.toFixed(2) + " €", icon: benefice >= 0 ? "✅" : "⚠️", color: benefice >= 0 ? "#10b981" : "#ef4444" },
           { label: "Revenus livraison", value: totalLivraison.toFixed(2) + " €", icon: "🚚", color: "#6366f1" },
+          { label: "Revenus lavage", value: totalLavage.toFixed(2) + " €", icon: "🧼", color: "#06b6d4" },
         ].map(s => <Card key={s.label}><div style={{ fontSize: 20, marginBottom: 6 }}>{s.icon}</div><div style={{ fontSize: "clamp(15px, 4.5vw, 22px)", fontWeight: 900, color: s.color, whiteSpace: "nowrap" }}>{s.value}</div><div style={{ fontSize: 10, color: "#999", fontWeight: 700, textTransform: "uppercase", marginTop: 2 }}>{s.label}</div></Card>)}
       </div>
 

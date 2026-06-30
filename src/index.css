@@ -1,0 +1,38 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  font-family: 'Nunito', 'Segoe UI', sans-serif;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #ffffff;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+/* Empêche le zoom automatique d'iOS à la saisie : les champs doivent faire >= 16px */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+/* Force la couleur du texte saisi à être visible (corrige le texte invisible sur iOS) */
+input, select, textarea {
+  color: #1a1a2e !important;
+  -webkit-text-fill-color: #1a1a2e !important;
+  opacity: 1 !important;
+}
+input::placeholder, textarea::placeholder {
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+}

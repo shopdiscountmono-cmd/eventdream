@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.3 — correctif crash saving + recherche croisée doublons clients (01/07/2026)";
+const APP_VERSION = "v3.36.3 — fusion clients automatique par nom ET téléphone (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -4424,7 +4424,7 @@ function BackupsPanel({ askConfirm }) {
             {fixing ? "⏳ Correction en cours..." : "🔧 Corriger les articles manquants (recovered_xxx)"}
           </Btn>
           <Btn variant="secondary" onClick={async () => {
-            if (!(await askConfirm("Fusionner les clients en doublon ?\n\nLes clients avec le même nom seront fusionnés en un seul (téléphones et adresses conservés)."))) return;
+            if (!(await askConfirm("Fusionner les clients en doublon ?\n\nLes clients avec le même nom OU le même numéro de téléphone seront fusionnés automatiquement (téléphones et adresses conservés)."))) return;
             setMsg(null);
             try {
               const res = await deduplicateClients();

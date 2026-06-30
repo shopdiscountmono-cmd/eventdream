@@ -720,32 +720,68 @@ exports.deduplicateClients = onCall({ region: REGION }, async (request) => {
 
   const snap = await db.collection("app").doc("clients").get();
   const clients = snap.data().value || [];
-  
-  // Garde le premier client pour chaque nom (en minuscules), fusionne téléphones/adresses
-  const seen = new Map();
-  let removed = 0;
-  
+
+  const normPhone = (s) => (s || "").replace(/[\s\-\.]/g, "").replace(/^(\+33|0033)/, "0").trim();
+  const getPhones = (c) => [...new Set([...(c.phones || []), c.phone || ""].map(normPhone).filter(p => p.length >= 8))];
+
+  // Étape 1 : fusionner par nom identique
+  const byName = new Map();
   clients.forEach(c => {
     const key = (c.name || "").toLowerCase().trim();
     if (!key) return;
-    if (!seen.has(key)) {
-      seen.set(key, { ...c });
-    } else {
-      // Fusion : on enrichit le client existant avec les infos manquantes
-      const existing = seen.get(key);
-      const phones = [...new Set([...(existing.phones || [""]), ...(c.phones || [c.phone || ""].filter(Boolean))].filter(Boolean))];
-      const addresses = [...new Set([...(existing.addresses || [existing.address || ""].filter(Boolean)), ...(c.addresses || [c.address || ""].filter(Boolean))].filter(Boolean))];
-      if (phones.length) existing.phones = phones;
-      if (addresses.length) existing.addresses = addresses;
-      if (!existing.email && c.email) existing.email = c.email;
-      removed++;
+    if (!byName.has(key)) byName.set(key, { ...c, phones: getPhones(c), addresses: [...new Set([...(c.addresses || []), c.address || ""].filter(Boolean))] });
+    else {
+      const ex = byName.get(key);
+      const phones = [...new Set([...ex.phones, ...getPhones(c)])];
+      const addresses = [...new Set([...ex.addresses, ...(c.addresses || []), c.address || ""].filter(Boolean))];
+      if (!ex.email && c.email) ex.email = c.email;
+      ex.phones = phones;
+      ex.addresses = addresses;
     }
   });
 
-  const deduped = Array.from(seen.values());
-  await db.collection("app").doc("clients").set({ value: deduped });
-  logger.info(`Déduplication clients : ${clients.length} → ${deduped.length} (${removed} supprimés)`);
-  return { before: clients.length, after: deduped.length, removed };
+  let merged = Array.from(byName.values());
+
+  // Étape 2 : fusionner par numéro de téléphone identique
+  const processPhone = true;
+  if (processPhone) {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const phoneIndex = new Map();
+      merged.forEach((c, i) => {
+        getPhones(c).forEach(p => {
+          if (!phoneIndex.has(p)) phoneIndex.set(p, []);
+          phoneIndex.get(p).push(i);
+        });
+      });
+      // Trouver le premier groupe à fusionner
+      for (const [, indices] of phoneIndex) {
+        if (indices.length < 2) continue;
+        // Fusionner tous ces clients en un seul (garder le premier)
+        const keep = merged[indices[0]];
+        for (let k = 1; k < indices.length; k++) {
+          const other = merged[indices[k]];
+          keep.phones = [...new Set([...keep.phones, ...getPhones(other)])];
+          keep.addresses = [...new Set([...keep.addresses, ...(other.addresses || [])].filter(Boolean))];
+          if (!keep.email && other.email) keep.email = other.email;
+          if (!keep.name && other.name) keep.name = other.name;
+        }
+        // Supprimer les autres (du plus grand index au plus petit)
+        const toRemove = new Set(indices.slice(1));
+        merged = merged.filter((_, i) => !toRemove.has(i));
+        changed = true;
+        break; // recommencer depuis le début
+      }
+    }
+  }
+
+  // Nettoyer les champs vides
+  merged = merged.map(c => ({ ...c, phones: (c.phones || []).filter(Boolean), addresses: (c.addresses || []).filter(Boolean) }));
+
+  await db.collection("app").doc("clients").set({ value: merged });
+  logger.info(`Déduplication clients : ${clients.length} → ${merged.length} (${clients.length - merged.length} supprimés)`);
+  return { before: clients.length, after: merged.length, removed: clients.length - merged.length };
 });
 
 // ───────────────────────────────────────────────────────────

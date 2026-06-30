@@ -631,6 +631,84 @@ exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (r
 });
 
 // ───────────────────────────────────────────────────────────
+// 9) Recherche de clients potentiellement en doublon
+//    (même nom approché, même téléphone, ou même email)
+// ───────────────────────────────────────────────────────────
+exports.findDuplicateClients = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
+
+  const snap = await db.collection("app").doc("clients").get();
+  const clients = snap.data().value || [];
+
+  const groups = []; // [{ reason, clients: [c1, c2, ...] }]
+  const seen = new Set();
+
+  const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const normPhone = (s) => (s || "").replace(/[\s\-\.]/g, "").replace(/^(\+33|0033)/, "0");
+
+  // 1) Même téléphone
+  const phoneMap = new Map();
+  clients.forEach(c => {
+    const phones = [...(c.phones || []), c.phone || ""].map(normPhone).filter(p => p.length >= 8);
+    phones.forEach(p => {
+      if (!phoneMap.has(p)) phoneMap.set(p, []);
+      phoneMap.get(p).push(c);
+    });
+  });
+  phoneMap.forEach((grp, phone) => {
+    if (grp.length < 2) return;
+    const key = grp.map(c => c.id).sort().join("|");
+    if (seen.has(key)) return;
+    seen.add(key);
+    groups.push({ reason: `📞 Même téléphone : ${phone}`, clients: grp });
+  });
+
+  // 2) Même email
+  const emailMap = new Map();
+  clients.forEach(c => {
+    const e = norm(c.email);
+    if (!e || !e.includes("@")) return;
+    if (!emailMap.has(e)) emailMap.set(e, []);
+    emailMap.get(e).push(c);
+  });
+  emailMap.forEach((grp, email) => {
+    if (grp.length < 2) return;
+    const key = grp.map(c => c.id).sort().join("|");
+    if (seen.has(key)) return;
+    seen.add(key);
+    groups.push({ reason: `📧 Même email : ${email}`, clients: grp });
+  });
+
+  // 3) Nom très similaire (distance d'édition <= 2)
+  const normalized = clients.map(c => ({ ...c, _norm: norm(c.name) }));
+  for (let i = 0; i < normalized.length; i++) {
+    for (let j = i + 1; j < normalized.length; j++) {
+      const a = normalized[i], b = normalized[j];
+      if (!a._norm || !b._norm) continue;
+      // Même début (3 premiers mots)
+      const wordsA = a._norm.split(" "), wordsB = b._norm.split(" ");
+      const commonWords = wordsA.filter(w => w.length > 2 && wordsB.includes(w));
+      if (commonWords.length >= 2) {
+        const key = [a.id, b.id].sort().join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        groups.push({ reason: `👤 Nom similaire : "${a.name}" / "${b.name}"`, clients: [a, b] });
+      }
+    }
+  }
+
+  logger.info(`findDuplicateClients : ${groups.length} groupe(s) de doublons potentiels trouvés`);
+  // Retourner seulement les données nécessaires (pas tout le client pour limiter la taille)
+  return {
+    count: groups.length,
+    groups: groups.slice(0, 50).map(g => ({
+      reason: g.reason,
+      clients: g.clients.map(c => ({ id: c.id, name: c.name, phones: c.phones || [c.phone || ""], email: c.email || "", addresses: c.addresses || [c.address || ""] }))
+    }))
+  };
+});
+
+// ───────────────────────────────────────────────────────────
 // 8) Déduplication des clients (supprime les doublons par nom)
 // ───────────────────────────────────────────────────────────
 exports.deduplicateClients = onCall({ region: REGION }, async (request) => {

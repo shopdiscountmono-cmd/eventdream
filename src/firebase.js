@@ -53,6 +53,12 @@ export async function deduplicateClients() {
   return res.data;
 }
 
+export async function findDuplicateClients() {
+  const fn = httpsCallable(functionsInstance, "findDuplicateClients");
+  const res = await fn({});
+  return res.data;
+}
+
 // ───────────────────────────────────────────────────────────
 // Stockage des photos et signatures du bon de livraison/retour (Firebase Storage).
 // Indispensable pour les photos : les intégrer directement dans Firestore (en base64) ferait

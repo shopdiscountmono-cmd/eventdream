@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients } from "./firebase";
+import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.1 — déduplication clients via Cloud Function depuis Réglages → Sauvegardes (01/07/2026)";
+const APP_VERSION = "v3.36.2 — recherche croisée doublons clients (téléphone, email, nom similaire) (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -4357,7 +4357,8 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
 function BackupsPanel({ askConfirm }) {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [dupGroups, setDupGroups] = useState(null); // résultats de la recherche
+  const [findingDups, setFindingDups] = useState(false);
   const [fixing, setFixing] = useState(false);
   const [restoring, setRestoring] = useState(null);
   const [msg, setMsg] = useState(null); // { type: "ok"|"err", text }
@@ -4431,10 +4432,42 @@ function BackupsPanel({ askConfirm }) {
           }} style={{ width: "100%" }}>
             👥 Fusionner les clients en doublon
           </Btn>
+          <Btn variant="secondary" onClick={async () => {
+            setFindingDups(true); setDupGroups(null); setMsg(null);
+            try {
+              const res = await findDuplicateClients();
+              setDupGroups(res.groups);
+              if (res.count === 0) setMsg({ type: "ok", text: "✅ Aucun doublon potentiel détecté !" });
+            } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec") }); }
+            setFindingDups(false);
+          }} disabled={findingDups} style={{ width: "100%" }}>
+            {findingDups ? "⏳ Recherche..." : "🔍 Rechercher les doublons restants"}
+          </Btn>
         </div>
       </Card>
 
       {msg && <div style={{ background: msg.type === "ok" ? "#d1fae5" : "#fef2f2", color: msg.type === "ok" ? "#065f46" : "#b91c1c", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 700 }}>{msg.text}</div>}
+
+      {dupGroups && dupGroups.length > 0 && (
+        <Card>
+          <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 800 }}>🔍 {dupGroups.length} groupe(s) de doublons potentiels</h3>
+          <div style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>Vérifie et fusionne manuellement dans la bibliothèque clients si nécessaire.</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {dupGroups.map((g, i) => (
+              <div key={i} style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#92400e", marginBottom: 8 }}>{g.reason}</div>
+                {g.clients.map(c => (
+                  <div key={c.id} style={{ fontSize: 12, color: "#444", marginBottom: 4, paddingLeft: 8, borderLeft: "2px solid #fde68a" }}>
+                    <strong>{c.name}</strong>
+                    {(c.phones || []).filter(Boolean).length > 0 && <span style={{ color: "#666" }}> · {(c.phones || []).filter(Boolean).join(", ")}</span>}
+                    {c.email && <span style={{ color: "#666" }}> · {c.email}</span>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 800 }}>📋 Sauvegardes disponibles</h3>

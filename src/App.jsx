@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.34.0 — sauvegardes automatiques quotidiennes + restauration en 1 clic depuis Réglages → Sauvegardes (30/06/2026)";
+const APP_VERSION = "v3.34.1 — correctif articles recovered_xxx via Cloud Function depuis Réglages → Sauvegardes (30/06/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un

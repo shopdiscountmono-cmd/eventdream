@@ -41,6 +41,12 @@ export async function restoreBackup(backupId) {
   return res.data;
 }
 
+export async function fixRecoveredIds() {
+  const fn = httpsCallable(functionsInstance, "fixRecoveredIds");
+  const res = await fn({});
+  return res.data;
+}
+
 // ───────────────────────────────────────────────────────────
 // Stockage des photos et signatures du bon de livraison/retour (Firebase Storage).
 // Indispensable pour les photos : les intégrer directement dans Firestore (en base64) ferait

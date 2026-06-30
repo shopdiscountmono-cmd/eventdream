@@ -629,3 +629,56 @@ exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (r
   logger.info(`✅ Restauration ${backupId} effectuée (${orderCount} commandes). Sauvegarde de sécurité : ${safetyId}.`);
   return { success: true, orderCount, safetyBackupId: safetyId };
 });
+
+// ───────────────────────────────────────────────────────────
+// 7) Correction ponctuelle des IDs "recovered_xxx" (résidu de la récupération Sheet)
+//    Remplace les IDs temporaires par les vrais IDs du stock.
+// ───────────────────────────────────────────────────────────
+exports.fixRecoveredIds = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
+  const rolesSnap = await db.collection("app").doc("userRoles").get();
+  const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
+  const email = (request.auth.token.email || "").toLowerCase();
+  if (roles[email] === "livreur") throw new HttpsError("permission-denied", "Réservé aux admins.");
+
+  const ID_MAP = {
+    "recovered_chaise_pliante": "chaise_pliante",
+    "recovered_chaise_napoleon": "chaise_napoleon",
+    "recovered_table_ronde_180cm": "table_ronde",
+    "recovered_table_rectangulaire_240cm": "custom_1781857956581",
+    "recovered_nappe": "nappe",
+    "recovered_grande_assiette": "grande_assiette",
+    "recovered_petite_assiette": "petite_assiette",
+    "recovered_fourchette": "fourchette",
+    "recovered_couteau": "couteau",
+    "recovered_grande_cuillere": "grande_cuillere",
+    "recovered_petite_cuillere": "petite_cuillere",
+    "recovered_verre_pied": "verre_pied",
+    "recovered_verre_eau": "verre_eau",
+    "recovered_rechauffe_plat": "rechauffe_plat",
+    "recovered_centre_de_table": "centre_de_table",
+    "recovered_serviette_de_table": "serviette_de_table",
+    "recovered_arche_ronde": "arche_ronde",
+    "recovered_backdrop": "backdrop",
+  };
+
+  const snap = await db.collection("app").doc("orders").get();
+  const orders = snap.data().value || [];
+  let fixedOrders = 0, fixedItems = 0;
+
+  const corrected = orders.map(o => {
+    if (!o.items || !o.items.some(i => (i.id || "").startsWith("recovered_"))) return o;
+    fixedOrders++;
+    const newItems = o.items.map(i => {
+      const newId = ID_MAP[i.id];
+      if (!newId) return i;
+      fixedItems++;
+      return { ...i, id: newId };
+    });
+    return { ...o, items: newItems };
+  });
+
+  await db.collection("app").doc("orders").set({ value: corrected });
+  logger.info(`✅ fixRecoveredIds : ${fixedOrders} commandes, ${fixedItems} articles corrigés.`);
+  return { fixedOrders, fixedItems };
+});

@@ -42,8 +42,24 @@ function useOrdersFirestore() {
     return () => unsub();
   }, []);
 
-  return [orders, setOrders];
-}
+const updateOrders = async (next) => {
+  const updated =
+    typeof next === "function"
+      ? next(orders)
+      : next;
+
+setOrders(updated);
+
+for (const order of updated) {
+  if (!order?.id) continue;
+
+  await setDoc(
+    doc(db, "orders", order.id),
+    JSON.parse(JSON.stringify(order))
+  );
+}};
+
+return [orders, updateOrders];}
 
 function useFirestoreState(key, initialValue) {
   const [value, setValue] = useState(initialValue);

@@ -183,12 +183,15 @@ exports.checkUpcomingDates = onSchedule(
   { schedule: "every 15 minutes", region: SCHEDULER_REGION, timeZone: "Europe/Paris" },
   async () => {
     const [ordersSnap, settingsSnap, notifiedSnap] = await Promise.all([
-      db.collection("app").doc("orders").get(),
-      db.collection("app").doc("settings").get(),
-      db.collection("app").doc("notifiedAlerts").get(),
-    ]);
+  db.collection("orders").get(),
+  db.collection("app").doc("settings").get(),
+  db.collection("app").doc("notifiedAlerts").get(),
+]);
 
-    const orders = ordersSnap.exists ? ordersSnap.data().value : [];
+const orders = ordersSnap.docs.map(doc => ({
+  ...doc.data(),
+  id: doc.id
+}));
     const settings = settingsSnap.exists ? settingsSnap.data().value : {};
     const notified = notifiedSnap.exists ? (notifiedSnap.data().value || {}) : {};
     if (!Array.isArray(orders) || !orders.length) return;

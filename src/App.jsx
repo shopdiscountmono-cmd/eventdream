@@ -4764,7 +4764,13 @@ function AppInner() {
     return [newOrder, ...prev];
   });
   const [askConfirm, ConfirmUI] = useConfirm();
-  const deleteOrder = async (id) => { if (await askConfirm("Supprimer cette commande ?")) setOrders(prev => prev.filter(o => o.id !== id), true); };
+  const deleteOrder = async (id) => {
+  if (!(await askConfirm("Supprimer cette commande ?"))) return;
+
+  await deleteDoc(doc(db, "orders", id));
+
+  setOrders(prev => prev.filter(o => o.id !== id));
+};
   const updateStatus = (id, status) => setOrders(prev => prev.map(o => {
     if (o.id !== id) return o;
     // Passage automatique en phase retour quand livré

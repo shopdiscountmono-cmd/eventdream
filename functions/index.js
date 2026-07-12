@@ -873,3 +873,31 @@ exports.fixRecoveredIds = onCall({ region: REGION }, async (request) => {
   logger.info(`✅ fixRecoveredIds : ${fixedOrders} commandes, ${fixedItems} articles corrigés.`);
   return { fixedOrders, fixedItems };
 });
+exports.migrateOrders = onCall(
+  { region: REGION, timeoutSeconds: 540 },
+  async () => {
+
+    const oldSnap = await db.collection("app").doc("orders").get();
+
+    if (!oldSnap.exists) {
+      return { success: false, message: "app/orders introuvable" };
+    }
+
+    const orders = oldSnap.data().value || [];
+
+    let count = 0;
+
+    for (const order of orders) {
+      if (!order.id) continue;
+
+      await db.collection("orders").doc(order.id).set(order);
+
+      count++;
+    }
+
+    return {
+      success: true,
+      migrated: count
+    };
+  }
+);

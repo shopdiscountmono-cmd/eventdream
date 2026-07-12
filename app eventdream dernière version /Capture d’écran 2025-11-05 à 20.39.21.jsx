@@ -1,50 +1,18 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import React from "react";
-import {
-  doc,
-  setDoc,
-  onSnapshot,
-  collection,
-  getDocs,
-  deleteDoc,
-  updateDoc
-} from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.4 — fusion clients groupe par groupe avec bouton dédié (01/07/2026)";
+const APP_VERSION = "v3.17.0 — carte « À préparer » du tableau de bord cliquable vers les commandes filtrées (22/06/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
 // document Firestore : collection "app" → document <key> → { value: [...] }.
 // Lecture en temps réel via onSnapshot, écriture à chaque modification.
-// ─── SYNCHRONISATION FIRESTORE ───────────────────────────
-
-function useOrdersFirestore() {
-  const [orders, setOrders] = useState([]);
-
-  useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, "orders"),
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          firestoreId: doc.id
-        }));
-
-        setOrders(data);
-      }
-    );
-
-    return () => unsub();
-  }, []);
-
-  return [orders, setOrders];
-}
-
 function useFirestoreState(key, initialValue) {
   const [value, setValue] = useState(initialValue);
   const valueRef = useRef(initialValue);
@@ -238,18 +206,8 @@ const DEFAULT_SETTINGS = {
   campaignSenderEmail: "",
   campaignLogoUrl: "",
   campaignAccentColor: "#1a1a2e",
-  photoRetentionDays: 30, // suppression auto des photos (livraison/retour) X jours après clôture de la commande
-  // Barèmes de tarification automatique des options de livraison, par ARTICLE individuel (id du stock).
-  // Forme : { [itemId]: [{ min, max, price }, ...] }. Vide par défaut (0 € tant que non configuré).
-  // Barèmes des options de livraison, par ARTICLE individuel (id du stock) :
-  // - Étage : { [itemId]: { batchSize, price } } → trajets = arrondi(qté/batchSize), prix = trajets × price × étages
-  // - Mise en place : { [itemId]: { unitPrice } } → prix = unitPrice × quantité commandée
-  deliveryEtageBaremes: {},
-  deliveryMiseEnPlaceBaremes: {},
   // Notifications
   notifyOnValidation: true,
-  notifPreparationEnabled: true,
-  notifPreparationDelais: [24],
   notifLivraisonEnabled: true,
   notifLivraisonDelais: [24],
   notifRetraitEnabled: true,
@@ -258,8 +216,8 @@ const DEFAULT_SETTINGS = {
   notifRetourDelais: [24],
 };
 
-const STATUS_FLOW = ["Confirmée", "Préparée", "Chez le client", "Clôturée"];
-const STATUS_COLORS = { "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "Chez le client": "#10b981", "Clôturée": "#6b7280" };
+const STATUS_FLOW = ["Brouillon", "Devis", "Confirmée", "Préparée", "En livraison", "Livrée", "En cours", "Retour", "Clôturée"];
+const STATUS_COLORS = { "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "En livraison": "#f97316", "Livrée": "#10b981", "En cours": "#06b6d4", "Retour": "#ef4444", "Clôturée": "#6b7280" };
 const EXPENSE_CATEGORIES = ["Achat matériel", "Maintenance / Réparation", "Carburant", "Loyer / Entrepôt", "Salaires", "Fournitures", "Assurance", "Autre"];
 const CAT_COLORS = { "Achat matériel": "#3b82f6", "Maintenance / Réparation": "#8b5cf6", "Carburant": "#f97316", "Loyer / Entrepôt": "#ef4444", "Salaires": "#10b981", "Fournitures": "#f59e0b", "Assurance": "#06b6d4", "Autre": "#6b7280" };
 const ICON_LIBRARY = ["🪑","💺","⭕","▬","🟦","🍽️","🍴","🔪","🥄","🍷","🥛","🍾","🥂","☕","🫖","🍶","🔥","⛺","🎪","🎉","🎈","🎀","🕯️","💡","🔦","🪩","🎤","🔊","🎸","📽️","🖼️","🪞","🏳️","➿","🧺","🧻","🪟","🚪","🛋️","🛏️","🚽","🚿","❄️","🌡️","🔌","🔋","🧯","🪜","🛒","📦","🧊","🍳","🥘","🍲","🧁","🎂","🌸","🌹","🌿","🕺"];
@@ -269,12 +227,12 @@ function genDevisId(existingOrders) {
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
-  const todayPattern = new RegExp(`^dev\\d+-${dd}${mm}${yy}`);
+  const todayPattern = new RegExp(`^dev\\d+${dd}${mm}${yy}`);
   const todayCount = (existingOrders || []).filter(o => todayPattern.test(o.id)).length;
   // Suffixe court unique (basé sur l'heure) pour garantir l'unicité même si
   // deux devis sont créés rapidement avec le même numéro du jour.
   const uniq = Date.now().toString(36).slice(-4);
-  return `dev${todayCount + 1}-${dd}${mm}${yy}-${uniq}`;
+  return `dev${todayCount + 1}${dd}${mm}${yy}-${uniq}`;
 }
 
 // ─── EXPORT CSV (ouvrable dans Google Sheets / Excel / Numbers) ───────────────
@@ -352,48 +310,6 @@ function deliveryCostOf(order, settings) {
   return total;
 }
 
-// Quantité totale d'un article précis (par id) dans une commande.
-function qtyById(order, itemId) {
-  return (order.items || []).reduce((s, it) => (it.id === itemId ? s + (parseInt(it.qty) || 0) : s), 0);
-}
-
-// Calcul automatique du tarif "Monter à l'étage" : pour chaque article, le nombre de trajets
-// nécessaires (arrondi au-dessus de quantité ÷ quantité max transportable par trajet) × le prix
-// par trajet — puis le tout multiplié par le nombre d'étages. Toujours 0 si rien n'est configuré.
-function calcEtagePriceAuto(order, settings, nbEtages) {
-  const baremes = (settings && settings.deliveryEtageBaremes) || {};
-  const itemIds = [...new Set((order.items || []).map(it => it.id).filter(Boolean))];
-  const parEtage = itemIds.reduce((s, id) => {
-    const cfg = baremes[id];
-    if (!cfg || !cfg.batchSize) return s;
-    const qty = qtyById(order, id);
-    if (qty <= 0) return s;
-    const trajets = Math.ceil(qty / (parseFloat(cfg.batchSize) || 1));
-    return s + trajets * (parseFloat(cfg.price) || 0);
-  }, 0);
-  return parEtage * (parseInt(nbEtages) || 0);
-}
-
-// Calcul automatique du tarif "Mise en place" : pour chaque article, prix unitaire × quantité
-// commandée, additionné sur tous les articles. Toujours 0 si rien n'est configuré.
-function calcMiseEnPlacePriceAuto(order, settings) {
-  const baremes = (settings && settings.deliveryMiseEnPlaceBaremes) || {};
-  const itemIds = [...new Set((order.items || []).map(it => it.id).filter(Boolean))];
-  return itemIds.reduce((s, id) => {
-    const cfg = baremes[id];
-    if (!cfg || !cfg.unitPrice) return s;
-    return s + (parseFloat(cfg.unitPrice) || 0) * qtyById(order, id);
-  }, 0);
-}
-
-// Coût total des options de livraison cochées (étage + mise en place), tarif manuel prioritaire.
-function deliveryExtrasCost(order) {
-  let total = 0;
-  if (order.etageActive) total += parseFloat(order.etagePrice) || 0;
-  if (order.miseEnPlaceActive) total += parseFloat(order.miseEnPlacePrice) || 0;
-  return total;
-}
-
 // Total commande = articles - remise + livraison
 // Nombre de périodes de location (arrondi au supérieur).
 // Ex: 6 jours / 2 jours standard = 3 périodes. 7j / 2j = 4 périodes.
@@ -423,11 +339,7 @@ function extraDaysCost(order, settings) {
 }
 
 function orderSubtotal(order) {
-  return (order.items || []).reduce((s, i) => {
-    const base = (parseInt(i.qty) || 0) * (parseFloat(i.price) || 0);
-    const cleaning = i.cleaningSelected ? (parseInt(i.qty) || 0) * (parseFloat(i.cleaningPrice) || 0) : 0;
-    return s + base + cleaning;
-  }, 0);
+  return (order.items || []).reduce((s, i) => s + (parseInt(i.qty) || 0) * (parseFloat(i.price) || 0), 0);
 }
 function orderDiscount(order) {
   const sub = orderSubtotal(order);
@@ -461,7 +373,7 @@ function cautionCost(order, stock) {
 function orderTotal(order, settings) {
   const sub = orderSubtotal(order);
   const disc = orderDiscount(order);
-  const del = deliveryCostOf(order, settings) + deliveryExtrasCost(order);
+  const del = deliveryCostOf(order, settings);
   const extra = extraDaysCost(order, settings);
   return Math.max(0, sub - disc) + del + extra;
 }
@@ -508,7 +420,7 @@ function extractNewClientsFromOrders(orderList, existingClients) {
   const toAdd = [];
   for (const o of (orderList || [])) {
     if (!o.clientName) continue;
-    const key = `${(o.clientName || "").toLowerCase()}|${o.clientPhone || ""}`;
+    const key = `${o.clientName.toLowerCase()}|${o.clientPhone || ""}`;
     if (existingKeys.has(key) || seen.has(key)) continue;
     seen.add(key);
     const phones = (o.clientPhones && o.clientPhones.length ? o.clientPhones : (o.clientPhone ? [o.clientPhone] : [])).filter(Boolean);
@@ -728,13 +640,11 @@ function buildPdfBlob(order, settings, mode = "devis", stock = []) {
     doc.setTextColor(30, 30, 30); doc.setFont("helvetica", "normal"); doc.setFontSize(9);
     (order.items || []).forEach((item, idx) => {
       const compText = kitCompositionText(item, stock);
-      const cleaningNote = item.cleaningSelected ? "+ option nettoyage" : "";
-      const noteLines = compText && cleaningNote ? doc.splitTextToSize(`${compText} · ${cleaningNote}`, 100) : compText ? doc.splitTextToSize(compText, 100) : cleaningNote ? doc.splitTextToSize(cleaningNote, 100) : [];
-      const compLines = noteLines;
+      const compLines = compText ? doc.splitTextToSize(compText, 100) : [];
       const rowH = compLines.length ? 7.5 + compLines.length * 3.5 : 7.5;
       if (y > 250) { doc.addPage(); y = 25; }
       if (idx % 2 === 0) { doc.setFillColor(250, 250, 252); doc.rect(m, y - 5, W - 2 * m, rowH - 0.5, "F"); }
-      const ip = (parseFloat(item.price) || 0) + (item.cleaningSelected ? (parseFloat(item.cleaningPrice) || 0) : 0), iq = parseInt(item.qty) || 0;
+      const ip = parseFloat(item.price) || 0, iq = parseInt(item.qty) || 0;
       doc.setTextColor(30, 30, 30); doc.setFont("helvetica", "normal"); doc.setFontSize(9);
       doc.text(item.name || "", m + 2, y);
       doc.text(String(iq), 130, y, { align: "center" });
@@ -755,13 +665,6 @@ function buildPdfBlob(order, settings, mode = "devis", stock = []) {
     if (del > 0) {
       const trajets = [order.trajetAller !== false && "aller", order.trajetRetour && "retour"].filter(Boolean).join(" + ");
       doc.text(`Livraison (${trajets})`, W - m - 60, y); doc.text(`${del.toFixed(2)} €`, W - m, y, { align: "right" }); y += 6;
-    }
-    if (order.etageActive) {
-      const nbEt = order.etageNbEtages || 1;
-      doc.text(`Monter à l'étage (${nbEt} étage${nbEt > 1 ? "s" : ""})`, W - m - 60, y); doc.text(`${(parseFloat(order.etagePrice) || 0).toFixed(2)} €`, W - m, y, { align: "right" }); y += 6;
-    }
-    if (order.miseEnPlaceActive) {
-      doc.text("Mise en place", W - m - 60, y); doc.text(`${(parseFloat(order.miseEnPlacePrice) || 0).toFixed(2)} €`, W - m, y, { align: "right" }); y += 6;
     }
     if (extraDays > 0) {
       doc.setTextColor(194, 65, 12);
@@ -799,14 +702,10 @@ function buildPdfBlob(order, settings, mode = "devis", stock = []) {
 
     if (order.notes) { doc.setTextColor(100,100,100); doc.setFont("helvetica","italic"); doc.setFontSize(9); const nl = doc.splitTextToSize(`Notes : ${order.notes}`, W - 2*m); doc.text(nl, m, y); y += nl.length * 5 + 4; }
 
-    // Mention livraison/retour au pied du camion — uniquement si l'option "Monter à l'étage"
-    // n'est pas cochée (sinon la mention contredirait l'option facturée juste au-dessus).
+    // Mention livraison/retour au pied du camion (uniquement pour les commandes en livraison)
     if (order.deliveryMode === "livraison") {
       doc.setTextColor(60,60,60); doc.setFont("helvetica","bold"); doc.setFontSize(8.5);
-      const mention = order.etageActive
-        ? `La livraison et le retour s'effectuent jusqu'à l'étage (${order.etageNbEtages || 1} étage${(order.etageNbEtages || 1) > 1 ? "s" : ""}).`
-        : "La livraison et le retour s'effectuent au pied du camion.";
-      doc.text(mention, m, y);
+      doc.text("La livraison et le retour s'effectuent au pied du camion.", m, y);
       doc.setFont("helvetica","normal"); y += 7;
     }
 
@@ -875,7 +774,7 @@ function Card({ children, style, onClick }) {
 function Btn({ children, onClick, variant = "primary", size = "md", style, disabled }) {
   const sz = { sm: { padding: "6px 14px", fontSize: 13 }, md: { padding: "10px 20px", fontSize: 14 }, lg: { padding: "14px 28px", fontSize: 16 } }[size];
   const vr = { primary: { background: "#1a1a2e", color: "#fff" }, secondary: { background: "#f4f4f8", color: "#333" }, danger: { background: "#fee2e2", color: "#dc2626" }, success: { background: "#d1fae5", color: "#065f46" }, ghost: { background: "transparent", color: "#666" }, warning: { background: "#fef9c3", color: "#92400e" } }[variant];
-  return <button type="button" disabled={disabled} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer", fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", opacity: disabled ? 0.5 : 1, ...sz, ...vr, ...style }}>{children}</button>;
+  return <button disabled={disabled} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer", fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", opacity: disabled ? 0.5 : 1, ...sz, ...vr, ...style }}>{children}</button>;
 }
 function Inp({ label, value, onChange, type = "text", placeholder, required, min, step, suffix, disabled }) {
   // Pour les nombres : on garde un tampon texte local pendant la saisie pour
@@ -927,32 +826,6 @@ function Sel({ label, value, onChange, options }) {
     </div>
   );
 }
-// Éditeur d'une grille de tranches { min, max, price } pour une catégorie + un type d'option.
-// tiers : tableau de tranches. onChange(newTiers) : appelé à chaque modification.
-// Réglage "Monter à l'étage" pour un article : quantité max transportable par trajet + prix du trajet.
-function EtageBaremeFields({ cfg, onChange }) {
-  const c = cfg || { batchSize: "", price: "" };
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 12, color: "#999" }}>Quantité max par trajet</span>
-      <input type="number" min="1" value={c.batchSize ?? ""} onChange={e => onChange({ ...c, batchSize: e.target.value })} style={{ width: 60, padding: "6px 8px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit" }} />
-      <span style={{ fontSize: 12, color: "#999" }}>→ Prix par trajet</span>
-      <input type="number" min="0" step="0.1" value={c.price ?? ""} onChange={e => onChange({ ...c, price: e.target.value })} style={{ width: 64, padding: "6px 8px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit" }} />
-      <span style={{ fontSize: 12, color: "#999" }}>€</span>
-    </div>
-  );
-}
-// Réglage "Mise en place" pour un article : simple prix unitaire (× quantité commandée).
-function MiseEnPlaceBaremeFields({ cfg, onChange }) {
-  const c = cfg || { unitPrice: "" };
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <span style={{ fontSize: 12, color: "#999" }}>Prix par unité</span>
-      <input type="number" min="0" step="0.01" value={c.unitPrice ?? ""} onChange={e => onChange({ ...c, unitPrice: e.target.value })} style={{ width: 64, padding: "6px 8px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit" }} />
-      <span style={{ fontSize: 12, color: "#999" }}>€</span>
-    </div>
-  );
-}
 function TimeInput({ label, value, onChange }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -974,28 +847,6 @@ function Modal({ open, onClose, title, children, wide }) {
       </div>
     </div>
   );
-}
-// Remplace window.confirm() : peu fiable (parfois invisible, laissant l'app comme figée)
-// dans les PWA installées sur l'écran d'accueil iPhone. Utilisation :
-//   const [askConfirm, ConfirmUI] = useConfirm();
-//   onClick={async () => { if (await askConfirm("Supprimer ?")) ...; }}
-//   return <>...{ConfirmUI}</>;
-function useConfirm() {
-  const [state, setState] = useState(null); // { message, resolve }
-  const ask = (message) => new Promise(resolve => setState({ message, resolve }));
-  const handle = (result) => { setState(s => { if (s) s.resolve(result); return null; }); };
-  const ConfirmUI = (
-    <Modal open={!!state} onClose={() => handle(false)} title="Confirmation">
-      {state && <>
-        <div style={{ fontSize: 15, color: "#1a1a2e", marginBottom: 22, lineHeight: 1.5 }}>{state.message}</div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <Btn variant="secondary" onClick={() => handle(false)}>Annuler</Btn>
-          <Btn variant="danger" onClick={() => handle(true)}>Confirmer</Btn>
-        </div>
-      </>}
-    </Modal>
-  );
-  return [ask, ConfirmUI];
 }
 function SignaturePad({ onSave, onClose, title }) {
   const canvasRef = useRef(null), drawing = useRef(false), lastPos = useRef({ x: 0, y: 0 });
@@ -1025,89 +876,8 @@ function SignaturePad({ onSave, onClose, title }) {
   );
 }
 
-// ─── BON DE LIVRAISON/RETOUR : commentaire + photos + signature client ───────
-// Réutilisé à la fois pour la confirmation de livraison ET de retour (mêmes champs).
-// Les photos/signature sont uploadées vers Firebase Storage AVANT d'appeler onConfirm,
-// pour ne jamais stocker d'images en base64 dans le document Firestore "orders" partagé.
-function BonCapture({ orderId, kind, confirmLabel, onConfirm }) {
-  const [comment, setComment] = useState("");
-  const [photos, setPhotos] = useState([]); // [{file, preview}]
-  const [signataire, setSignataire] = useState("");
-  const [signatureData, setSignatureData] = useState(null);
-  const [showSig, setShowSig] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState(null);
-  const fileInputRef = useRef(null);
-
-  const addPhotos = (files) => {
-    const room = 6 - photos.length;
-    if (room <= 0) return;
-    const list = Array.from(files).slice(0, room);
-    const withPreview = list.map(file => ({ file, preview: URL.createObjectURL(file) }));
-    setPhotos(prev => [...prev, ...withPreview]);
-  };
-  const removePhoto = (idx) => setPhotos(prev => prev.filter((_, i) => i !== idx));
-
-  const canConfirm = !!signataire.trim() && !!signatureData;
-
-  const handleConfirm = async () => {
-    if (!canConfirm) { setError("Le nom du signataire et la signature sont obligatoires."); return; }
-    setError(null);
-    setUploading(true);
-    try {
-      const photoUrls = [];
-      for (let i = 0; i < photos.length; i++) {
-        photoUrls.push(await uploadPhoto(orderId, kind, photos[i].file, i));
-      }
-      const signatureUrl = await uploadSignature(orderId, kind, signatureData);
-      await onConfirm({ comment, photos: photoUrls, signature: signatureUrl, signedBy: signataire.trim(), signedAt: new Date().toISOString() });
-    } catch (e) {
-      console.error(e);
-      setError("Erreur lors de l'envoi (photos/signature). Vérifie ta connexion et réessaie.");
-    }
-    setUploading(false);
-  };
-
-  return (
-    <form autoComplete="off" onSubmit={e => e.preventDefault()} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div>
-        <label style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Commentaire sur l'état du matériel</label>
-        <textarea name="bon-comment-libre" value={comment} onChange={e => setComment(e.target.value)} rows={3} placeholder="Ex : tout conforme, RAS / 2 chaises légèrement abîmées..." autoComplete="off" autoCorrect="on" autoCapitalize="sentences" spellCheck="true" style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
-      </div>
-      <div>
-        <label style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase", display: "block", marginBottom: 6 }}>📷 Photos ({photos.length}/6)</label>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {photos.map((p, i) => (
-            <div key={i} style={{ position: "relative", width: 70, height: 70 }}>
-              <img src={p.preview} style={{ width: 70, height: 70, borderRadius: 10, objectFit: "cover", display: "block" }} />
-              <button type="button" onClick={() => removePhoto(i)} style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontWeight: 900, fontSize: 12, cursor: "pointer", lineHeight: 1 }}>✕</button>
-            </div>
-          ))}
-          {photos.length < 6 && (
-            <button type="button" onClick={() => fileInputRef.current && fileInputRef.current.click()} style={{ width: 70, height: 70, borderRadius: 10, border: "1.5px dashed #9ca3af", background: "#f9fafb", cursor: "pointer", fontSize: 26, color: "#9ca3af", fontFamily: "inherit" }}>+</button>
-          )}
-        </div>
-        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" multiple style={{ display: "none" }} onChange={e => { if (e.target.files) addPhotos(e.target.files); e.target.value = ""; }} />
-      </div>
-      <div>
-        <label style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase", display: "block", marginBottom: 6 }}>✍️ Signature client (obligatoire)</label>
-        <input name="bon-signataire-libre" value={signataire} onChange={e => setSignataire(e.target.value)} placeholder="Nom du signataire" autoComplete="off" autoCorrect="on" autoCapitalize="words" style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit", marginBottom: 8, boxSizing: "border-box" }} />
-        <div onClick={() => setShowSig(true)} style={{ border: "1.5px dashed #10b981", borderRadius: 10, height: 90, background: "#f0fdf4", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-          {signatureData ? <img src={signatureData} style={{ maxHeight: 86, maxWidth: "100%" }} /> : <span style={{ color: "#10b981", fontWeight: 700, fontSize: 13 }}>Appuyer pour signer</span>}
-        </div>
-      </div>
-      {error && <div style={{ background: "#fef2f2", color: "#b91c1c", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700 }}>{error}</div>}
-      <Btn variant="primary" disabled={!canConfirm || uploading} onClick={handleConfirm} style={{ width: "100%" }}>
-        {uploading ? "⏳ Envoi en cours..." : confirmLabel}
-      </Btn>
-      {showSig && <SignaturePad title="Signature client" onSave={d => setSignatureData(d)} onClose={() => setShowSig(false)} />}
-    </form>
-  );
-}
-
 // ─── BIBLIOTHÈQUE CLIENTS ─────────────────────────────────────────────────────
-function ClientLibrary({ clients, setClients, onSelect, onClose, embedded, settings, orders }) {
-  const [askConfirm, ConfirmUI] = useConfirm();
+function ClientLibrary({ clients, setClients, onSelect, onClose, embedded, settings }) {
   const [search, setSearch] = useState("");
   const [addMode, setAddMode] = useState(false);
   const [editId, setEditId] = useState(null); // id du client en cours de modification (null = création)
@@ -1183,10 +953,8 @@ function ClientLibrary({ clients, setClients, onSelect, onClose, embedded, setti
             {filtered.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: "#999" }}><div style={{ fontSize: 32, marginBottom: 8 }}>👤</div>Aucun client</div>
             : filtered.map(client => {
               const isSelected = selectedId === client.id;
-              const clientOrders = (orders || []).filter(o => o.clientName === client.name).sort((a, b) => (b.closedAt || b.returnDate || b.deliveryDate || "").localeCompare(a.closedAt || a.returnDate || a.deliveryDate || ""));
               return (
-              <div key={client.id}>
-              <div onClick={() => setSelectedId(isSelected ? null : client.id)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: isSelected ? "#eef2ff" : "#f8f9fa", borderRadius: isSelected ? "12px 12px 0 0" : 12, border: `1.5px solid ${isSelected ? "#c7d2fe" : "#f0f0f0"}`, borderBottom: isSelected ? "none" : undefined, cursor: "pointer" }}>
+              <div key={client.id} onClick={() => setSelectedId(isSelected ? null : client.id)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: isSelected ? "#eef2ff" : "#f8f9fa", borderRadius: 12, border: `1.5px solid ${isSelected ? "#c7d2fe" : "#f0f0f0"}`, cursor: "pointer" }}>
                 {embedded && (
                   <input type="checkbox" checked={campaignSelection.has(client.id)} onClick={e => e.stopPropagation()} onChange={() => toggleCampaignSel(client.id)} style={{ width: 18, height: 18, flexShrink: 0 }} />
                 )}
@@ -1203,30 +971,9 @@ function ClientLibrary({ clients, setClients, onSelect, onClose, embedded, setti
                   {onSelect && <Btn variant="primary" size="sm" onClick={() => { onSelect(client); onClose && onClose(); }}>Choisir</Btn>}
                   {isSelected && <>
                     <Btn variant="secondary" size="sm" onClick={() => startEdit(client)}>✏️</Btn>
-                    <Btn variant="danger" size="sm" onClick={async () => { if (await askConfirm(`Supprimer ${client.name} ?`)) setClients(prev => prev.filter(c => c.id !== client.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>
+                    <Btn variant="danger" size="sm" onClick={() => { if (confirm(`Supprimer ${client.name} ?`)) setClients(prev => prev.filter(c => c.id !== client.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>
                   </>}
                 </div>
-              </div>
-              {isSelected && orders && (
-                <div style={{ background: "#fff", border: "1.5px solid #c7d2fe", borderTop: "1px solid #e5e7eb", borderRadius: "0 0 12px 12px", padding: "10px 14px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "#666", textTransform: "uppercase", marginBottom: 8 }}>📋 Historique ({clientOrders.length} commande{clientOrders.length > 1 ? "s" : ""})</div>
-                  {clientOrders.length === 0 ? (
-                    <div style={{ fontSize: 13, color: "#999" }}>Aucune commande pour ce client.</div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
-                      {clientOrders.map(o => (
-                        <div key={o.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", background: "#f8f9fa", borderRadius: 8, fontSize: 13 }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 700 }}>{o.id}</div>
-                            <div style={{ color: "#999", fontSize: 11 }}>{fmtD(o.deliveryDate)} · {o.status}</div>
-                          </div>
-                          <div style={{ fontWeight: 800, color: "#10b981", flexShrink: 0 }}>{orderTotal(o, settings).toFixed(2)} €</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               </div>
               );
             })}
@@ -1281,7 +1028,6 @@ function ClientLibrary({ clients, setClients, onSelect, onClose, embedded, setti
           onSent={() => { setCampaignSelection(new Set()); setShowCampaignComposer(false); }}
         />
       )}
-      {ConfirmUI}
     </div>
   );
 }
@@ -1376,13 +1122,8 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
   };
   const [form, setForm] = useState(initial || empty);
   const [step, setStep] = useState(1);
-  // Remonte en haut de la fenêtre à chaque changement d'étape (sinon le défilement reste
-  // à la même position qu'avant, ce qui fait démarrer la nouvelle étape "en bas").
-  const stepTopRef = useRef(null);
-  useEffect(() => { stepTopRef.current?.scrollIntoView({ block: "start" }); }, [step]);
   const [search, setSearch] = useState("");
   const [catTab, setCatTab] = useState("articles");
-  const [selectedCat, setSelectedCat] = useState("Toutes");
   const [showClientLib, setShowClientLib] = useState(false);
   const [showAddressField, setShowAddressField] = useState(!!(initial && initial.address));
   const [cautionForced, setCautionForced] = useState(!!(initial && (initial.cautionMoyen || initial.cautionManual)));
@@ -1415,7 +1156,6 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
   const sub = orderSubtotal(form);
   const disc = orderDiscount(form);
   const delCost = deliveryCostOf(form, settings);
-  const delExtras = deliveryExtrasCost(form);
   const extraDaysNb = extraDaysCount(form, settings);
   const extraDaysCostAuto = extraDaysNb > 0 ? extraDaysNb * sub : 0;
   const extraDaysCostFinal = extraDaysCost(form, settings);
@@ -1500,52 +1240,10 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
 
   // Le catalogue du devis est construit à partir du STOCK réel (articles ajoutés
   // inclus) + les kits. Ainsi un nouvel article appara\u00eet ici avec sa catégorie.
-  const stockArticles = useMemo(() => (stock || []).map(s => ({ id: s.id, name: s.name, price: parseFloat(s.price) || 0, icon: s.icon || "📦", category: s.category || "Autre", unit: s.unit || "unité", components: s.components || null, cleaningOption: !!s.cleaningOption, cleaningPrice: parseFloat(s.cleaningPrice) || 0 })), [stock]);
-  const allCatalog = useMemo(() => stockArticles.length > 0 ? [...stockArticles.filter(a => !a.components), ...stockArticles.filter(a => a.components)] : CATALOG, [stockArticles]);
-  const filtered = allCatalog.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) && (catTab === "kits" ? (c.category === "Kits" || c.components) : (c.category !== "Kits" && !c.components)) && (selectedCat === "Toutes" || c.category === selectedCat));
+  const stockArticles = (stock || []).map(s => ({ id: s.id, name: s.name, price: parseFloat(s.price) || 0, icon: s.icon || "📦", category: s.category || "Autre", unit: s.unit || "unité", components: s.components || null }));
+  const allCatalog = stockArticles.length > 0 ? [...stockArticles.filter(a => !a.components), ...stockArticles.filter(a => a.components)] : CATALOG;
+  const filtered = allCatalog.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) && (catTab === "kits" ? (c.category === "Kits" || c.components) : (c.category !== "Kits" && !c.components)));
   const cats = [...new Set(filtered.map(c => c.category))];
-  const allCatsForTab = [...new Set(allCatalog.filter(c => catTab === "kits" ? (c.category === "Kits" || c.components) : (c.category !== "Kits" && !c.components)).map(c => c.category))];
-
-  // Disponibilité par article sur la PÉRIODE de ce devis (livraison → retour), en tenant compte
-  // des autres commandes actives qui se chevauchent sur les mêmes dates — affichée en direct à
-  // l'étape Matériel pour ne pas découvrir un manque de stock seulement à l'enregistrement.
-  const dispoParArticle = useMemo(() => {
-    const myPeriod = orderPeriod(form);
-    const dispo = {};
-    if (!myPeriod) {
-      // Pas encore de date choisie : on affiche le stock total possédé, sans tenir compte des réservations.
-      for (const s of (stock || [])) dispo[s.id] = parseInt(s.total) || 0;
-      return dispo;
-    }
-    const occupying = (allOrders || []).filter(o =>
-      o.id !== form.id &&
-      !["Brouillon", "Devis", "Clôturée"].includes(o.status) &&
-      periodsOverlap(orderPeriod(o), myPeriod)
-    );
-    const reserved = {};
-    for (const o of occupying) {
-      const n = expandToBaseNeeds(o.items, stock);
-      for (const id in n) reserved[id] = (reserved[id] || 0) + n[id];
-    }
-    for (const s of (stock || [])) {
-      dispo[s.id] = (parseInt(s.total) || 0) - (reserved[s.id] || 0);
-    }
-    return dispo;
-  }, [stock, allOrders, form.id, form.deliveryDate, form.returnDate]);
-
-  // Disponibilité affichée pour un article du catalogue (gère les kits : limité par le composant
-  // le plus rare), en EXCLUANT la quantité déjà mise dans le panier de CE devis (sinon elle se
-  // soustrairait elle-même puisqu'elle n'est pas encore "réservée" ailleurs).
-  const getDispoPourPicker = (p) => {
-    if (p.components && p.components.length > 0) {
-      return Math.min(...p.components.map(c => {
-        const d = dispoParArticle[c.id];
-        if (d === undefined) return 0;
-        return Math.floor(d / (parseInt(c.qty) || 1));
-      }));
-    }
-    return dispoParArticle[p.id] !== undefined ? dispoParArticle[p.id] : null;
-  };
 
   const MOYEN_OPTS = [{ value: "", label: "-- Choisir --" }, { value: "paypal", label: "💙 PayPal" }, { value: "virement", label: "🏦 Virement" }, { value: "especes", label: "💵 Espèces" }, { value: "cheque", label: "📄 Chèque" }, { value: "cb", label: "💳 CB" }];
 
@@ -1565,24 +1263,11 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
 
   const [stockAlert, setStockAlert] = useState(null);
 
-  // Un devis avec un acompte versé est considéré comme confirmé (le client s'est engagé) —
-  // sauf si le statut est déjà plus avancé (Préparée, Livrée...), qu'on ne rétrograde jamais.
-  const computeFinalStatus = (currentStatus) => {
-    const a = parseFloat(form.acompte) || 0;
-    if (a > 0 && (!currentStatus || currentStatus === "Brouillon" || currentStatus === "Devis")) return "Confirmée";
-    return currentStatus === "Brouillon" ? "Devis" : currentStatus;
-  };
-  // Un acompte versé sans moyen de paiement précisé n'est pas autorisé (pour la compta).
-  const acompteMoyenManquant = () => (parseFloat(form.acompte) || 0) > 0 && !form.acompteMoyen;
-  const [saveError, setSaveError] = useState(null);
-
   const handleSave = () => {
-    if (acompteMoyenManquant()) { setSaveError("⚠️ Merci de sélectionner le moyen de paiement de l'acompte avant d'enregistrer."); return; }
-    setSaveError(null);
     const shortages = stockShortage(form, allOrders, stock);
     if (shortages.length > 0) { setStockAlert(shortages); return; }
     finalisedRef.current = true;
-    onSave({ ...form, status: computeFinalStatus(form.status) }); onClose();
+    onSave({ ...form, status: form.status === "Brouillon" ? "Devis" : form.status }); onClose();
   };
   // Réduit les quantités au stock disponible puis enregistre.
   // Gère aussi les kits : si le manque vient d'un composant à l'intérieur d'un kit, c'est la
@@ -1616,12 +1301,12 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
         return it;
       }
     }).filter(it => (parseInt(it.qty) || 0) > 0);
-    const newForm = { ...form, items: reduced, status: computeFinalStatus(form.status) };
+    const newForm = { ...form, items: reduced, status: form.status === "Brouillon" ? "Devis" : form.status };
     setStockAlert(null);
     finalisedRef.current = true;
     onSave(newForm); onClose();
   };
-  const saveAnyway = () => { setStockAlert(null); finalisedRef.current = true; onSave({ ...form, status: computeFinalStatus(form.status) }); onClose(); };
+  const saveAnyway = () => { setStockAlert(null); finalisedRef.current = true; onSave({ ...form, status: form.status === "Brouillon" ? "Devis" : form.status }); onClose(); };
 
   // Enregistre le devis en cours comme BROUILLON (même incomplet), pour le finir plus tard.
   const saveDraft = () => {
@@ -1630,7 +1315,7 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
   };
 
   return (
-    <div ref={stepTopRef} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {/* Indicateur brouillon auto */}
       {onAutosave && (
         <div style={{ fontSize: 12, fontWeight: 700, color: draftSaved ? "#10b981" : "#bbb", textAlign: "center", transition: "color 0.3s", minHeight: 16 }}>
@@ -1730,42 +1415,10 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
       {/* ÉTAPE 2 — MATÉRIEL */}
       {step === 2 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>📅 Dates de la réservation</h3>
-          <div style={{ background: "#eef2ff", borderRadius: 10, padding: 12, marginBottom: 4 }}>
-            <Inp label="📅 Jour de l'événement (pré-remplit livraison J-1 et retour J+1)" type="date" value={form.eventDate || ""} onChange={v => {
-              const shift = (d, n) => { if (!d) return ""; const dt = new Date(d + "T12:00:00"); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; };
-              setForm(f => ({ ...f, eventDate: v, deliveryDate: shift(v, -1), returnDate: shift(v, 1) }));
-            }} />
-            <div style={{ fontSize: 12, color: "#6366f1", marginTop: 4 }}>Vous pouvez ensuite ajuster librement les dates ci-dessous.</div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-            <Inp label={form.deliveryMode === "livraison" ? "Date livr." : "Date retrait"} type="date" value={form.deliveryDate} onChange={v => {
-              // Enchaînement auto : en choisissant la date de livraison/retrait, on pré-remplit
-              // l'heure (si vide, 16h par défaut) et la date de retour (J+1 si vide), pour éviter de tout saisir.
-              setForm(f => {
-                const next = { ...f, deliveryDate: v };
-                if (!f.deliveryTime) next.deliveryTime = "16:00";
-                if (!f.returnDate && v) { const dt = new Date(v + "T12:00:00"); dt.setDate(dt.getDate() + 1); next.returnDate = dt.toISOString().split("T")[0]; }
-                if (!f.returnTime) next.returnTime = "16:00";
-                return next;
-              });
-            }} required />
-            <Inp label="Date retour" type="date" value={form.returnDate} onChange={v => {
-              setForm(f => { const next = { ...f, returnDate: v }; if (!f.returnTime) next.returnTime = "16:00"; return next; });
-            }} />
-          </div>
-          <div style={{ fontSize: 11, color: "#6366f1", marginTop: -6 }}>💡 Les horaires précis se règlent à l'étape suivante (heure par défaut : 16h, modifiable).</div>
-          <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 14 }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>📦 Sélection du matériel</h3>
-          </div>
           <div style={{ display: "flex", gap: 6 }}>
             {[{ id: "articles", label: "🪑 Articles" }, { id: "kits", label: "🎁 Kits" }].map(t => (
-              <button key={t.id} onClick={() => { setCatTab(t.id); setSelectedCat("Toutes"); }} style={{ padding: "7px 16px", borderRadius: 10, border: "2px solid", borderColor: catTab === t.id ? "#1a1a2e" : "#e5e7eb", background: catTab === t.id ? "#1a1a2e" : "#fff", color: catTab === t.id ? "#fff" : "#666", fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>{t.label}</button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {["Toutes", ...allCatsForTab].map(c => (
-              <button key={c} onClick={() => setSelectedCat(c)} style={{ padding: "6px 12px", borderRadius: 20, border: "1.5px solid", borderColor: selectedCat === c ? "#6366f1" : "#e5e7eb", background: selectedCat === c ? "#eef2ff" : "#fff", color: selectedCat === c ? "#6366f1" : "#666", fontWeight: 700, cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>{c}</button>
+              <button key={t.id} onClick={() => setCatTab(t.id)} style={{ padding: "7px 16px", borderRadius: 10, border: "2px solid", borderColor: catTab === t.id ? "#1a1a2e" : "#e5e7eb", background: catTab === t.id ? "#1a1a2e" : "#fff", color: catTab === t.id ? "#fff" : "#666", fontWeight: 700, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>{t.label}</button>
             ))}
           </div>
           <Inp placeholder="🔍 Rechercher..." value={search} onChange={setSearch} />
@@ -1775,28 +1428,18 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
                 <div style={{ padding: "7px 14px", background: "#f8f8f8", fontSize: 11, fontWeight: 800, color: "#999", textTransform: "uppercase" }}>{cat}</div>
                 {filtered.filter(c => c.category === cat).map(p => {
                   const inCart = form.items.find(i => i.id === p.id);
-                  const dispo = getDispoPourPicker(p);
-                  const enManque = dispo !== null && inCart && (parseInt(inCart.qty) || 0) > dispo;
                   return (
                     <div key={p.id} style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f4f4f4", gap: 10 }}>
                       <span style={{ fontSize: 20 }}>{p.icon}</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
                         {p.components && p.components.length > 0 && <div style={{ fontSize: 11, color: "#888" }}>{kitCompositionText(p, stock)}</div>}
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 12, color: "#10b981", fontWeight: 700 }}>{p.price.toFixed(2)} € / {p.unit}</span>
-                          {dispo !== null && (
-                            <span style={{ fontSize: 11, fontWeight: 800, color: dispo <= 0 ? "#ef4444" : dispo <= 5 ? "#f59e0b" : "#10b981" }}>
-                              {dispo <= 0 ? "⚠️ Aucun disponible" : `${dispo} disponible${dispo > 1 ? "s" : ""}`}
-                            </span>
-                          )}
-                        </div>
-                        {enManque && <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, marginTop: 2 }}>⚠️ Quantité demandée supérieure au stock disponible sur ces dates</div>}
+                        <div style={{ fontSize: 12, color: "#10b981", fontWeight: 700 }}>{p.price.toFixed(2)} € / {p.unit}</div>
                       </div>
                       {inCart ? (
                         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <button onClick={() => updQty(p.id, String(inCart.qty - 1))} style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>−</button>
-                          <input type="number" min="1" value={inCart.qty} onChange={e => updQty(p.id, e.target.value)} onBlur={() => { if (!inCart.qty) set("items", form.items.filter(i => i.id !== p.id)); }} onFocus={e => e.target.select()} style={{ width: 54, height: 30, borderRadius: 8, border: enManque ? "1.5px solid #ef4444" : "1.5px solid #1a1a2e", textAlign: "center", fontWeight: 800, fontSize: 14, fontFamily: "inherit", background: enManque ? "#fef2f2" : "#f0f4ff", outline: "none" }} />
+                          <input type="number" min="1" value={inCart.qty} onChange={e => updQty(p.id, e.target.value)} onBlur={() => { if (!inCart.qty) set("items", form.items.filter(i => i.id !== p.id)); }} onFocus={e => e.target.select()} style={{ width: 54, height: 30, borderRadius: 8, border: "1.5px solid #1a1a2e", textAlign: "center", fontWeight: 800, fontSize: 14, fontFamily: "inherit", background: "#f0f4ff", outline: "none" }} />
                           <button onClick={() => updQty(p.id, String((parseInt(inCart.qty)||0) + 1))} style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid #e5e7eb", background: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>+</button>
                         </div>
                       ) : <Btn variant="secondary" size="sm" onClick={() => addItem(p)}><span style={{ width: 14, height: 14 }}>{I.plus}</span></Btn>}
@@ -1809,25 +1452,15 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
           {form.items.length > 0 && (
             <div style={{ background: "#f8f9fa", borderRadius: 12, padding: 14 }}>
               <h4 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 800 }}>📋 Panier ({form.items.length})</h4>
-              {form.items.map(item => {
-                const lineTotal = (parseInt(item.qty) || 0) * (parseFloat(item.price) || 0) + (item.cleaningSelected ? (parseInt(item.qty) || 0) * (parseFloat(item.cleaningPrice) || 0) : 0);
-                return (
-                <div key={item.id} style={{ marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ flex: 1, fontSize: 13 }}>{item.icon} {item.name} × {item.qty}</span>
-                    <span style={{ fontSize: 11, color: "#999" }}>PU</span>
-                    <input type="number" value={item.price} step="0.01" onChange={e => updPrice(item.id, e.target.value)} style={{ width: 64, padding: "4px 6px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 12, fontFamily: "inherit", textAlign: "right" }} />
-                    <span style={{ fontWeight: 700, fontSize: 13, minWidth: 60, textAlign: "right" }}>{lineTotal.toFixed(2)} €</span>
-                    <button onClick={() => set("items", form.items.filter(i => i.id !== item.id))} style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#fee2e2", color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ width: 12, height: 12 }}>{I.trash}</span></button>
-                  </div>
-                  {item.cleaningOption && (
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginLeft: 4, cursor: "pointer" }}>
-                      <input type="checkbox" checked={!!item.cleaningSelected} onChange={e => set("items", form.items.map(i => i.id === item.id ? { ...i, cleaningSelected: e.target.checked } : i))} style={{ width: 15, height: 15 }} />
-                      <span style={{ fontSize: 11, color: "#666" }}>🧼 Option nettoyage (+{(parseFloat(item.cleaningPrice) || 0).toFixed(2)} €/unité, soit +{((parseFloat(item.cleaningPrice) || 0) * (parseInt(item.qty) || 0)).toFixed(2)} €)</span>
-                    </label>
-                  )}
+              {form.items.map(item => (
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ flex: 1, fontSize: 13 }}>{item.icon} {item.name} × {item.qty}</span>
+                  <span style={{ fontSize: 11, color: "#999" }}>PU</span>
+                  <input type="number" value={item.price} step="0.01" onChange={e => updPrice(item.id, e.target.value)} style={{ width: 64, padding: "4px 6px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 12, fontFamily: "inherit", textAlign: "right" }} />
+                  <span style={{ fontWeight: 700, fontSize: 13, minWidth: 60, textAlign: "right" }}>{(item.qty * item.price).toFixed(2)} €</span>
+                  <button onClick={() => set("items", form.items.filter(i => i.id !== item.id))} style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#fee2e2", color: "#dc2626", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ width: 12, height: 12 }}>{I.trash}</span></button>
                 </div>
-              );})}
+              ))}
               <div style={{ borderTop: "1.5px solid #e5e7eb", marginTop: 8, paddingTop: 8, display: "flex", justifyContent: "space-between", fontWeight: 800 }}><span>Sous-total</span><span>{sub.toFixed(2)} €</span></div>
             </div>
           )}
@@ -1874,62 +1507,35 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
                 )}
               </div>
               <div style={{ textAlign: "right", fontWeight: 900, fontSize: 16, borderTop: "1px solid #e5e7eb", paddingTop: 10 }}>Total livraison : <span style={{ color: "#10b981" }}>{delCost.toFixed(2)} €</span></div>
-
-              {/* Options supplémentaires : cumulables avec la livraison de base ci-dessus */}
-              <div style={{ borderTop: "1.5px dashed #d1d5db", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ border: "1.5px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                    <input type="checkbox" checked={!!form.etageActive} onChange={e => {
-                      const checked = e.target.checked;
-                      set("etageActive", checked);
-                      if (checked && (form.etagePrice == null || form.etagePrice === "")) {
-                        set("etagePrice", calcEtagePriceAuto(form, settings, form.etageNbEtages || 1).toFixed(2));
-                        if (!form.etageNbEtages) set("etageNbEtages", 1);
-                      }
-                    }} style={{ width: 18, height: 18 }} />
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>🪜 Monter à l'étage</span>
-                  </label>
-                  {form.etageActive && (
-                    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <Inp label="Nombre d'étages" type="number" value={form.etageNbEtages || ""} onChange={v => { set("etageNbEtages", v); set("etagePrice", calcEtagePriceAuto(form, settings, v).toFixed(2)); }} min="1" />
-                      <Inp label="✏️ Tarif (€) — calculé auto, modifiable" type="number" value={form.etagePrice ?? ""} onChange={v => set("etagePrice", v)} min="0" step="0.5" />
-                      <div style={{ fontSize: 11, color: "#999" }}>💡 Suggestion automatique : {calcEtagePriceAuto(form, settings, form.etageNbEtages || 0).toFixed(2)} € (selon le barème réglé pour ce matériel)</div>
-                    </div>
-                  )}
-                </div>
-                <div style={{ border: "1.5px solid #e5e7eb", borderRadius: 10, padding: 12 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                    <input type="checkbox" checked={!!form.miseEnPlaceActive} onChange={e => {
-                      const checked = e.target.checked;
-                      set("miseEnPlaceActive", checked);
-                      if (checked && (form.miseEnPlacePrice == null || form.miseEnPlacePrice === "")) {
-                        set("miseEnPlacePrice", calcMiseEnPlacePriceAuto(form, settings).toFixed(2));
-                      }
-                    }} style={{ width: 18, height: 18 }} />
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>🛠️ Mise en place</span>
-                  </label>
-                  {form.miseEnPlaceActive && (
-                    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <Inp label="✏️ Tarif (€) — calculé auto, modifiable" type="number" value={form.miseEnPlacePrice ?? ""} onChange={v => set("miseEnPlacePrice", v)} min="0" step="0.5" />
-                      <div style={{ fontSize: 11, color: "#999" }}>💡 Suggestion automatique : {calcMiseEnPlacePriceAuto(form, settings).toFixed(2)} € (selon le barème réglé pour ce matériel)</div>
-                    </div>
-                  )}
-                </div>
-                {(form.etageActive || form.miseEnPlaceActive) && (
-                  <div style={{ textAlign: "right", fontWeight: 800, fontSize: 14, color: "#7c3aed" }}>Total options : {deliveryExtrasCost(form).toFixed(2)} €</div>
-                )}
-              </div>
             </div>
           )}
 
           <div style={{ background: "#eef2ff", borderRadius: 10, padding: 12, marginBottom: 4 }}>
-            <div style={{ fontSize: 12, color: "#6366f1" }}>📅 Dates : du {fmtD(form.deliveryDate) || "—"} au {fmtD(form.returnDate) || "—"} <span style={{ color: "#999" }}>(modifiable à l'étape 2)</span></div>
+            <Inp label="📅 Jour de l'événement (pré-remplit livraison J-1 et retour J+1)" type="date" value={form.eventDate || ""} onChange={v => {
+              const shift = (d, n) => { if (!d) return ""; const dt = new Date(d + "T12:00:00"); dt.setDate(dt.getDate() + n); return dt.toISOString().split("T")[0]; };
+              setForm(f => ({ ...f, eventDate: v, deliveryDate: shift(v, -1), returnDate: shift(v, 1) }));
+            }} />
+            <div style={{ fontSize: 12, color: "#6366f1", marginTop: 4 }}>Vous pouvez ensuite ajuster librement les dates ci-dessous.</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-            <TimeInput label={form.deliveryMode === "livraison" ? "Heure livraison" : "Heure retrait"} value={form.deliveryTime} onChange={v => set("deliveryTime", v)} />
+            <Inp label={form.deliveryMode === "livraison" ? "Date livr." : "Date retrait"} type="date" value={form.deliveryDate} onChange={v => {
+              // Enchaînement auto : en choisissant la date de livraison/retrait, on pré-remplit
+              // l'heure (si vide) et la date de retour (J+1 si vide), pour éviter de tout saisir.
+              setForm(f => {
+                const next = { ...f, deliveryDate: v };
+                if (!f.deliveryTime) next.deliveryTime = "09:00";
+                if (!f.returnDate && v) { const dt = new Date(v + "T12:00:00"); dt.setDate(dt.getDate() + 1); next.returnDate = dt.toISOString().split("T")[0]; }
+                if (!f.returnTime) next.returnTime = "18:00";
+                return next;
+              });
+            }} required />
+            <TimeInput label="Heure" value={form.deliveryTime} onChange={v => set("deliveryTime", v)} />
+            <Inp label="Date retour" type="date" value={form.returnDate} onChange={v => {
+              setForm(f => { const next = { ...f, returnDate: v }; if (!f.returnTime) next.returnTime = "18:00"; return next; });
+            }} />
             <TimeInput label="Heure retour" value={form.returnTime} onChange={v => set("returnTime", v)} />
           </div>
-          <div style={{ fontSize: 11, color: "#6366f1", marginTop: 2 }}>💡 Heure par défaut : 16h00, librement modifiable.</div>
+          <div style={{ fontSize: 11, color: "#6366f1", marginTop: 2 }}>💡 En choisissant la date de {form.deliveryMode === "livraison" ? "livraison" : "retrait"}, l'heure et la date de retour se pré-remplissent (modifiables).</div>
 
           {/* Bloc jours supplémentaires — visible dès que livraison + retour sont renseignés */}
           {form.deliveryDate && form.returnDate && (
@@ -2004,11 +1610,8 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
               <button onClick={() => set("acompte", (total * settings.defaultAcomptePercent / 100).toFixed(2))} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Appliquer {settings.defaultAcomptePercent}% ({(total * settings.defaultAcomptePercent / 100).toFixed(2)} €)</button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <Inp label="Acompte versé (€)" type="number" value={form.acompte} onChange={v => { set("acompte", v); setSaveError(null); }} min="0" step="0.01" />
-              <div>
-                <Sel label="Moyen de paiement" value={form.acompteMoyen} onChange={v => { set("acompteMoyen", v); setSaveError(null); }} options={MOYEN_OPTS} />
-                {acompteMoyenManquant() && saveError && <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 700, marginTop: 4 }}>⚠️ Requis si un acompte est versé</div>}
-              </div>
+              <Inp label="Acompte versé (€)" type="number" value={form.acompte} onChange={v => set("acompte", v)} min="0" step="0.01" />
+              <Sel label="Moyen de paiement" value={form.acompteMoyen} onChange={v => set("acompteMoyen", v)} options={MOYEN_OPTS} />
             </div>
           </div>
           {/* Caution */}
@@ -2046,20 +1649,14 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, opacity: 0.8 }}><span>Sous-total</span><span>{sub.toFixed(2)} €</span></div>
             {disc > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, color: "#86efac" }}><span>Remise</span><span>- {disc.toFixed(2)} €</span></div>}
             {delCost > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, opacity: 0.8 }}><span>Livraison</span><span>{delCost.toFixed(2)} €</span></div>}
-            {form.etageActive && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, opacity: 0.8 }}><span>🪜 Monter à l'étage</span><span>{(parseFloat(form.etagePrice) || 0).toFixed(2)} €</span></div>}
-            {form.miseEnPlaceActive && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, opacity: 0.8 }}><span>🛠️ Mise en place</span><span>{(parseFloat(form.miseEnPlacePrice) || 0).toFixed(2)} €</span></div>}
             {extraDaysCostFinal > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6, color: "#fbbf24" }}><span>Suppl. périodes (+{extraDaysNb}×)</span><span>{extraDaysCostFinal.toFixed(2)} €</span></div>}
             <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 18, borderTop: "1px solid rgba(255,255,255,0.2)", paddingTop: 8, marginTop: 4 }}><span>TOTAL</span><span>{total.toFixed(2)} €</span></div>
             {parseFloat(form.acompte) > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 6, color: "#86efac" }}><span>Acompte versé</span><span>- {parseFloat(form.acompte).toFixed(2)} €</span></div>}
             {parseFloat(form.acompte) > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 6, color: "#fbbf24" }}><span>Reste à payer</span><span>{reste.toFixed(2)} €</span></div>}
           </div>
+          <Inp label="Notes internes" value={form.notes} onChange={v => set("notes", v)} placeholder="Informations complémentaires..." />
         </div>
       )}
-
-      {/* Notes internes : visibles et modifiables à toutes les étapes du devis, pas seulement au paiement */}
-      <Inp label="📝 Notes internes (visibles à toutes les étapes)" value={form.notes} onChange={v => set("notes", v)} placeholder="Informations complémentaires..." />
-
-      {saveError && <div style={{ background: "#fef2f2", border: "1.5px solid #fecaca", borderRadius: 10, padding: "10px 14px", color: "#b91c1c", fontWeight: 700, fontSize: 13 }}>{saveError}</div>}
 
       {/* Navigation par étapes */}
       <div style={{ display: "flex", gap: 12, justifyContent: "space-between", borderTop: "1px solid #f0f0f0", paddingTop: 16, flexWrap: "wrap" }}>
@@ -2118,39 +1715,16 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
 }
 
 // ─── FICHE LIVRAISON + PARTAGE + SIGNATURE ───────────────────────────────────
-// Petit panneau repliable montrant les AUTRES commandes du même client (hors celle en cours),
-// utilisé dans la fiche commande pour avoir un historique sans changer d'écran.
-function ClientHistoryPanel({ orders, settings }) {
-  const [open, setOpen] = useState(false);
-  const sorted = [...orders].sort((a, b) => (b.closedAt || b.returnDate || b.deliveryDate || "").localeCompare(a.closedAt || a.returnDate || a.deliveryDate || ""));
-  return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
-      <div onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#f8f9fa", cursor: "pointer" }}>
-        <span style={{ fontSize: 16 }}>📋</span>
-        <span style={{ flex: 1, fontWeight: 800, fontSize: 13 }}>Historique du client ({sorted.length} autre{sorted.length > 1 ? "s" : ""} commande{sorted.length > 1 ? "s" : ""})</span>
-        <span style={{ fontSize: 12, color: "#999", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▼</span>
-      </div>
-      {open && (
-        <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
-          {sorted.map(o => (
-            <div key={o.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", background: "#f8f9fa", borderRadius: 8, fontSize: 13 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700 }}>{o.id}</div>
-                <div style={{ color: "#999", fontSize: 11 }}>{fmtD(o.deliveryDate)} · {o.status}</div>
-              </div>
-              <div style={{ fontWeight: 800, color: "#10b981", flexShrink: 0 }}>{orderTotal(o, settings).toFixed(2)} €</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeletePhoto, allOrders }) {
+function DeliverySheet({ order, settings, onShare, stock, onEncaisser }) {
   const [phoneModal, setPhoneModal] = useState(false);
   const [addressModal, setAddressModal] = useState(false);
   const [tab, setTab] = useState("fiche");
   const [matChecks, setMatChecks] = useState(() => Object.fromEntries((order.items || []).map(i => [i.id, false])));
+  const [showSig, setShowSig] = useState(null);
+  const [sigLivreur, setSigLivreur] = useState(null);
+  const [sigClient, setSigClient] = useState(null);
+  const [bonClientName, setBonClientName] = useState(order.clientName || "");
+  const [bonSigned, setBonSigned] = useState(false);
   const CAUTION_MOYEN_LABELS_LONG = { cheque: "Par chèque", especes: "En espèces", virement: "Par virement", paypal: "Par PayPal", cb: "Par CB" };
 
   const del = deliveryCostOf(order, settings);
@@ -2162,7 +1736,7 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
   const checked = Object.values(matChecks).filter(Boolean).length;
   const matDone = (order.items || []).length > 0 && checked === (order.items || []).length;
 
-  const tabs = [{ id: "fiche", label: "📋 Fiche" }, { id: "checklist", label: `✅ Matériel (${checked}/${(order.items||[]).length})` }, { id: "bon", label: "📦 Bon de livraison" }];
+  const tabs = [{ id: "fiche", label: "📋 Fiche" }, { id: "checklist", label: `✅ Matériel (${checked}/${(order.items||[]).length})` }, { id: "bon", label: "✍️ Bon signé" }];
 
   return (
     <div>
@@ -2192,9 +1766,6 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
               {order.address ? <button onClick={() => setAddressModal(true)} style={{ display: "flex", alignItems: "flex-start", gap: 6, background: "#d1fae5", color: "#065f46", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 600, fontSize: 12, fontFamily: "inherit", width: "100%", textAlign: "left" }}><span style={{ width: 14, height: 14, flexShrink: 0, marginTop: 2 }}>{I.location}</span> {order.address}</button> : <div style={{ fontSize: 13, color: "#666" }}>Retrait entrepôt</div>}
             </div>
           </div>
-          {allOrders && allOrders.filter(o => o.clientName === order.clientName && o.id !== order.id).length > 0 && (
-            <ClientHistoryPanel orders={allOrders.filter(o => o.clientName === order.clientName && o.id !== order.id)} settings={settings} />
-          )}
           <div style={{ background: "#f8f9fa", borderRadius: 12, padding: 14, marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: "#999", fontWeight: 700, marginBottom: 10 }}>📦 MATÉRIEL</div>
             {(order.items||[]).map(item => (
@@ -2204,22 +1775,9 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
               </div>
             ))}
           </div>
-          {(deliveryCostOf(order, settings) > 0 || order.etageActive || order.miseEnPlaceActive) && (
-            <div style={{ background: "#eff6ff", borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "#1e40af" }}>🚚 Frais de livraison</div>
-              {deliveryCostOf(order, settings) > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#1e40af" }}><span>Livraison (pied du camion)</span><span style={{ fontWeight: 700 }}>{deliveryCostOf(order, settings).toFixed(2)} €</span></div>}
-              {order.etageActive && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#1e40af" }}><span>🪜 Monter à l'étage ({order.etageNbEtages || 1} étage{(order.etageNbEtages || 1) > 1 ? "s" : ""})</span><span style={{ fontWeight: 700 }}>{(parseFloat(order.etagePrice) || 0).toFixed(2)} €</span></div>}
-              {order.miseEnPlaceActive && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#1e40af" }}><span>🛠️ Mise en place</span><span style={{ fontWeight: 700 }}>{(parseFloat(order.miseEnPlacePrice) || 0).toFixed(2)} €</span></div>}
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 900, color: "#1e40af", borderTop: "1px solid #bfdbfe", paddingTop: 6 }}><span>Total</span><span>{(deliveryCostOf(order, settings) + deliveryExtrasCost(order)).toFixed(2)} €</span></div>
-            </div>
-          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
             <div style={{ background: "#fffbeb", borderRadius: 12, padding: 14, textAlign: "center" }}><div style={{ fontSize: 11, color: "#92400e", fontWeight: 700 }}>TOTAL</div><div style={{ fontSize: 18, fontWeight: 900, color: "#92400e" }}>{total.toFixed(2)} €</div></div>
-            <div style={{ background: "#f0fdf4", borderRadius: 12, padding: 14, textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "#065f46", fontWeight: 700 }}>ACOMPTE</div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: "#065f46" }}>{parseFloat(order.acompte||0).toFixed(2)} €</div>
-              {order.acompteMoyen && <div style={{ fontSize: 10, color: "#065f46", marginTop: 2, opacity: 0.8 }}>{{ paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" }[order.acompteMoyen]}</div>}
-            </div>
+            <div style={{ background: "#f0fdf4", borderRadius: 12, padding: 14, textAlign: "center" }}><div style={{ fontSize: 11, color: "#065f46", fontWeight: 700 }}>ACOMPTE</div><div style={{ fontSize: 18, fontWeight: 900, color: "#065f46" }}>{parseFloat(order.acompte||0).toFixed(2)} €</div></div>
             <div style={{ background: reste > 0 ? "#fff7ed" : "#f0fdf4", borderRadius: 12, padding: 14, textAlign: "center" }}><div style={{ fontSize: 11, color: reste > 0 ? "#c2410c" : "#065f46", fontWeight: 700 }}>À ENCAISSER</div><div style={{ fontSize: 18, fontWeight: 900, color: reste > 0 ? "#c2410c" : "#065f46" }}>{reste.toFixed(2)} €</div></div>
           </div>
           {caution > 0 && (
@@ -2277,53 +1835,24 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
       )}
 
       {tab === "bon" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ fontSize: 13, color: "#666" }}>Bon de livraison — {settings.companyName}. La signature se fait au moment de marquer la commande "livrée"/"retirée" (menu Livreur) et au moment du retour (menu Retours) — récapitulatif ci-dessous.</div>
-
-          {/* Récap LIVRAISON/RETRAIT */}
-          <div style={{ background: order.deliverySignature ? "#f0fdf4" : "#f8f9fa", border: order.deliverySignature ? "1.5px solid #bbf7d0" : "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>{order.deliveryMode === "livraison" ? "🚚 Livraison" : "🏠 Retrait"}</div>
-            {order.deliverySignature ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 13, color: "#065f46", fontWeight: 700 }}>✅ Signé par {order.deliverySignedBy} {order.deliverySignedAt && `· ${new Date(order.deliverySignedAt).toLocaleString("fr-FR")}`}</div>
-                {order.deliveryComment && <div style={{ fontSize: 13, color: "#444", background: "#fff", borderRadius: 8, padding: "8px 12px" }}>💬 {order.deliveryComment}</div>}
-                {order.deliveryPhotos && order.deliveryPhotos.length > 0 && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {order.deliveryPhotos.map((url, i) => (
-                      <div key={i} style={{ position: "relative", width: 64, height: 64 }}>
-                        <a href={url} target="_blank" rel="noreferrer"><img src={url} style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", display: "block" }} /></a>
-                        {onDeletePhoto && <button onClick={() => onDeletePhoto(order.id, "delivery", i, url)} style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontWeight: 900, fontSize: 12, cursor: "pointer", lineHeight: 1 }}>✕</button>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <img src={order.deliverySignature} style={{ maxHeight: 70, maxWidth: 200, background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ background: "#f8f9fa", borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 13, color: "#666", marginBottom: 14 }}>Bon de livraison — {settings.companyName}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#666", marginBottom: 6, textTransform: "uppercase" }}>Signature livreur</div>
+                <div onClick={() => setShowSig("livreur")} style={{ border: "1.5px dashed #3b82f6", borderRadius: 8, height: 80, background: "#eff6ff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>{sigLivreur ? <img src={sigLivreur} style={{ maxHeight: 76, maxWidth: "100%" }} /> : <span style={{ color: "#3b82f6", fontSize: 12, fontWeight: 700 }}>Appuyer pour signer ✍️</span>}</div>
               </div>
-            ) : <div style={{ fontSize: 13, color: "#999" }}>⏳ Pas encore signé.</div>}
-          </div>
-
-          {/* Récap RETOUR */}
-          <div style={{ background: order.returnSignature ? "#f0fdf4" : "#f8f9fa", border: order.returnSignature ? "1.5px solid #bbf7d0" : "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
-            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>↩️ Retour</div>
-            {order.returnSignature ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ fontSize: 13, color: "#065f46", fontWeight: 700 }}>✅ Signé par {order.returnSignedBy} {order.returnSignedAt && `· ${new Date(order.returnSignedAt).toLocaleString("fr-FR")}`}</div>
-                {order.returnComment && <div style={{ fontSize: 13, color: "#444", background: "#fff", borderRadius: 8, padding: "8px 12px" }}>💬 {order.returnComment}</div>}
-                {order.returnPhotos && order.returnPhotos.length > 0 && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {order.returnPhotos.map((url, i) => (
-                      <div key={i} style={{ position: "relative", width: 64, height: 64 }}>
-                        <a href={url} target="_blank" rel="noreferrer"><img src={url} style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", display: "block" }} /></a>
-                        {onDeletePhoto && <button onClick={() => onDeletePhoto(order.id, "return", i, url)} style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontWeight: 900, fontSize: 12, cursor: "pointer", lineHeight: 1 }}>✕</button>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <img src={order.returnSignature} style={{ maxHeight: 70, maxWidth: 200, background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#666", marginBottom: 6, textTransform: "uppercase" }}>Signature client</div>
+                <div onClick={() => setShowSig("client")} style={{ border: "1.5px dashed #10b981", borderRadius: 8, height: 80, background: "#f0fdf4", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>{sigClient ? <img src={sigClient} style={{ maxHeight: 76, maxWidth: "100%" }} /> : <span style={{ color: "#10b981", fontSize: 12, fontWeight: 700 }}>Appuyer pour signer ✍️</span>}</div>
+                <input value={bonClientName} onChange={e => setBonClientName(e.target.value)} placeholder="Nom du signataire" style={{ marginTop: 6, width: "100%", padding: "6px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 12, fontFamily: "inherit", boxSizing: "border-box" }} />
               </div>
-            ) : <div style={{ fontSize: 13, color: "#999" }}>⏳ Pas encore signé.</div>}
+            </div>
+            <div style={{ marginTop: 10, fontSize: 10, color: "#999", lineHeight: 1.5 }}>{settings.conditions}</div>
           </div>
-          <div style={{ fontSize: 10, color: "#999", lineHeight: 1.5 }}>{settings.conditions}</div>
+          {!bonSigned ? <Btn variant="primary" onClick={() => { if (!sigClient) { alert("Signature client requise"); return; } setBonSigned(true); }} style={{ width: "100%" }}><span style={{ width: 16, height: 16 }}>{I.check}</span> Confirmer le bon signé</Btn>
+          : <div style={{ background: "#d1fae5", borderRadius: 12, padding: 14, textAlign: "center" }}><div style={{ fontSize: 24 }}>✅</div><div style={{ fontWeight: 800, color: "#065f46" }}>Bon signé par {bonClientName}</div></div>}
         </div>
       )}
 
@@ -2335,6 +1864,7 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
           <a href={`maps://maps.apple.com/?daddr=${addr}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#f0fdf4", borderRadius: 12, textDecoration: "none", color: "#065f46", fontWeight: 700 }}><span style={{ fontSize: 24 }}>🍎</span> Plans Apple</a>
         </div>
       </Modal>
+      {showSig && <SignaturePad title={showSig === "livreur" ? "Signature livreur" : "Signature client"} onSave={d => showSig === "livreur" ? setSigLivreur(d) : setSigClient(d)} onClose={() => setShowSig(null)} />}
     </div>
   );
 }
@@ -2464,7 +1994,7 @@ function Dashboard({ orders, expenses, settings, setView, setQuickFilter }) {
   const prepLimit = (() => { const d = new Date(); d.setDate(d.getDate() + 4); return d.toISOString().split("T")[0]; })();
   const inPrepWindow = (date) => date && date >= TODAY && date <= prepLimit;
   const actives = orders.filter(o =>
-    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status) &&
+    !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status) &&
     inPrepWindow(o.deliveryDate)
   ).length;
   // Liste combinée des prochains événements : livraisons ET retours à venir.
@@ -2474,7 +2004,7 @@ function Dashboard({ orders, expenses, settings, setView, setQuickFilter }) {
       if (["Brouillon", "Devis", "Clôturée"].includes(o.status)) return;
       // Une fois la livraison/retrait effectué (phase passée en "retour"), on n'affiche plus
       // que l'étape retour. Avant ça, on n'affiche que l'étape départ — jamais les deux ensemble.
-      const dejaLivre = o.phase === "retour" || o.status === "Chez le client";
+      const dejaLivre = o.phase === "retour" || ["Livrée", "En cours", "Retour"].includes(o.status);
       if (!dejaLivre && o.deliveryDate && o.deliveryDate >= TODAY) {
         events.push({
           order: o, type: "depart", date: o.deliveryDate, time: o.deliveryTime,
@@ -2614,15 +2144,14 @@ function InventoryModal({ stock, setStock, onClose }) {
   );
 }
 function StockView({ orders, stock, setStock }) {
-  const [askConfirm, ConfirmUI] = useConfirm();
   const [editItem, setEditItem] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [filterCat, setFilterCat] = useState("Toutes");
   const [showAdd, setShowAdd] = useState(false);
-  const [newItem, setNewItem] = useState({ name: "", icon: "📦", category: "Équipements", unit: "unité", price: 0, coutAchat: 0, caution: 0, cleaningOption: false, cleaningPrice: 0, qtyCamion: 0, qtyLocal: 0, total: 0, seuil: 0, enMaintenance: 0, isKit: false, components: null });
+  const [newItem, setNewItem] = useState({ name: "", icon: "📦", category: "Équipements", unit: "unité", price: 0, coutAchat: 0, caution: 0, qtyCamion: 0, qtyLocal: 0, total: 0, seuil: 0, enMaintenance: 0, isKit: false, components: null });
   const [showInventory, setShowInventory] = useState(false);
 
-  const activeStatuses = ["Confirmée", "Préparée", "Chez le client"];
+  const activeStatuses = ["Confirmée", "Préparée", "En livraison", "Livrée", "En cours"];
   const stockSorti = useMemo(() => {
     const out = {};
     orders.filter(o => activeStatuses.includes(o.status)).forEach(o => {
@@ -2714,30 +2243,15 @@ function StockView({ orders, stock, setStock }) {
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ display: "flex", gap: 6 }}>
                         {isEd ? <>
-                          <Btn variant="success" size="sm" disabled={item.components && (!editForm.components || editForm.components.length === 0)} onClick={() => { setStock(prev => prev.map(s => s.id === editItem ? { ...editForm, qtyCamion: +editForm.qtyCamion || 0, qtyLocal: +editForm.qtyLocal || 0, total: (+editForm.qtyCamion || 0) + (+editForm.qtyLocal || 0), seuil: +editForm.seuil, enMaintenance: +editForm.enMaintenance, price: +editForm.price, coutAchat: +editForm.coutAchat, caution: +editForm.caution || 0, cleaningPrice: +editForm.cleaningPrice || 0 } : s)); setEditItem(null); }}><span style={{ width: 13, height: 13 }}>{I.check}</span></Btn>
+                          <Btn variant="success" size="sm" disabled={item.components && (!editForm.components || editForm.components.length === 0)} onClick={() => { setStock(prev => prev.map(s => s.id === editItem ? { ...editForm, qtyCamion: +editForm.qtyCamion || 0, qtyLocal: +editForm.qtyLocal || 0, total: (+editForm.qtyCamion || 0) + (+editForm.qtyLocal || 0), seuil: +editForm.seuil, enMaintenance: +editForm.enMaintenance, price: +editForm.price, coutAchat: +editForm.coutAchat, caution: +editForm.caution || 0 } : s)); setEditItem(null); }}><span style={{ width: 13, height: 13 }}>{I.check}</span></Btn>
                           <Btn variant="secondary" size="sm" onClick={() => setEditItem(null)}><span style={{ width: 13, height: 13 }}>{I.x}</span></Btn>
                         </> : <>
                           <Btn variant="secondary" size="sm" onClick={() => { setEditItem(item.id); setEditForm({ ...item }); }}><span style={{ width: 13, height: 13 }}>{I.edit}</span></Btn>
-                          <Btn variant="danger" size="sm" onClick={async () => { if (await askConfirm("Supprimer ?")) setStock(prev => prev.filter(s => s.id !== item.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>
+                          <Btn variant="danger" size="sm" onClick={() => { if (confirm("Supprimer ?")) setStock(prev => prev.filter(s => s.id !== item.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>
                         </>}
                       </div>
                     </td>
                   </tr>
-                  {isEd && (
-                    <tr key={item.id + "_clean"} style={{ borderTop: "1px dashed #fde68a", background: "#fffbeb" }}>
-                      <td colSpan={12} style={{ padding: "12px 16px" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                          <input type="checkbox" checked={!!editForm.cleaningOption} onChange={e => setEditForm(f => ({ ...f, cleaningOption: e.target.checked }))} style={{ width: 18, height: 18 }} />
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "#92400e" }}>🧼 Option nettoyage disponible sur cet article (proposée à la commande)</span>
-                        </label>
-                        {editForm.cleaningOption && (
-                          <div style={{ marginTop: 10, maxWidth: 220 }}>
-                            <Inp label="Supplément nettoyage €/unité" type="number" value={editForm.cleaningPrice} onChange={v => setEditForm(f => ({ ...f, cleaningPrice: v }))} />
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )}
                   {isEd && item.components && (
                     <tr key={item.id + "_comps"} style={{ borderTop: "1px dashed #c7d2fe", background: "#f5f5ff" }}>
                       <td colSpan={12} style={{ padding: "14px 16px" }}>
@@ -2829,13 +2343,6 @@ function StockView({ orders, stock, setStock }) {
             <Inp label="Coût achat €" type="number" value={newItem.coutAchat} onChange={v => setNewItem(f => ({ ...f, coutAchat: v }))} />
             <Inp label="🔒 Caution €/unité" type="number" value={newItem.caution} onChange={v => setNewItem(f => ({ ...f, caution: v }))} />
           </div>
-          <div style={{ background: "#f8f9ff", borderRadius: 10, padding: "12px 14px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: newItem.cleaningOption ? 10 : 0 }}>
-              <input type="checkbox" checked={!!newItem.cleaningOption} onChange={e => setNewItem(f => ({ ...f, cleaningOption: e.target.checked }))} style={{ width: 18, height: 18 }} />
-              <span style={{ fontSize: 13, fontWeight: 700 }}>🧼 Proposer une option de nettoyage (au lieu de créer un article "sale"/"propre" séparé)</span>
-            </label>
-            {newItem.cleaningOption && <Inp label="Supplément nettoyage €/unité" type="number" value={newItem.cleaningPrice} onChange={v => setNewItem(f => ({ ...f, cleaningPrice: v }))} />}
-          </div>
           {!newItem.isKit && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
             <Inp label="🚚 Qté camion" type="number" value={newItem.qtyCamion} onChange={v => setNewItem(f => ({ ...f, qtyCamion: v }))} />
             <Inp label="🏠 Qté local" type="number" value={newItem.qtyLocal} onChange={v => setNewItem(f => ({ ...f, qtyLocal: v }))} />
@@ -2845,26 +2352,24 @@ function StockView({ orders, stock, setStock }) {
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <Btn variant="secondary" onClick={() => setShowAdd(false)}>Annuler</Btn>
             <Btn variant="primary" disabled={!newItem.name || (newItem.isKit && (!newItem.components || newItem.components.length === 0))} onClick={() => {
-              const base = { id: (newItem.isKit ? "kit_" : "custom_") + Date.now(), name: newItem.name, icon: newItem.icon, category: newItem.isKit ? "Kits" : newItem.category, unit: newItem.unit, price: +newItem.price, coutAchat: +newItem.coutAchat, caution: +newItem.caution || 0, cleaningOption: !!newItem.cleaningOption, cleaningPrice: +newItem.cleaningPrice || 0 };
+              const base = { id: (newItem.isKit ? "kit_" : "custom_") + Date.now(), name: newItem.name, icon: newItem.icon, category: newItem.isKit ? "Kits" : newItem.category, unit: newItem.unit, price: +newItem.price, coutAchat: +newItem.coutAchat, caution: +newItem.caution || 0 };
               const qc = +newItem.qtyCamion || 0, ql = +newItem.qtyLocal || 0;
               const item = newItem.isKit
                 ? { ...base, components: newItem.components, total: 0, qtyCamion: 0, qtyLocal: 0, seuil: 0, enMaintenance: 0 }
                 : { ...base, qtyCamion: qc, qtyLocal: ql, total: qc + ql, seuil: +newItem.seuil, enMaintenance: 0 };
               setStock(prev => [...prev, item]);
               setShowAdd(false);
-              setNewItem({ name: "", icon: "📦", category: "Équipements", unit: "unité", price: 0, coutAchat: 0, caution: 0, cleaningOption: false, cleaningPrice: 0, qtyCamion: 0, qtyLocal: 0, total: 0, seuil: 0, enMaintenance: 0, isKit: false, components: null });
+              setNewItem({ name: "", icon: "📦", category: "Équipements", unit: "unité", price: 0, coutAchat: 0, caution: 0, qtyCamion: 0, qtyLocal: 0, total: 0, seuil: 0, enMaintenance: 0, isKit: false, components: null });
             }}><span style={{ width: 14, height: 14 }}>{I.plus}</span> Ajouter</Btn>
           </div>
         </div>
       </Modal>
-      {ConfirmUI}
     </div>
   );
 }
 
 // ─── COMPTABILITÉ + SEUIL DE RENTABILITÉ ─────────────────────────────────────
 function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCategories, setExpenseCategories, recurringExpenses, setRecurringExpenses }) {
-  const [askConfirm, ConfirmUI] = useConfirm();
   const [activeTab, setActiveTab] = useState("synthese");
   const [showForm, setShowForm] = useState(false);
   const [editExp, setEditExp] = useState(null);
@@ -2898,14 +2403,13 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
     setShowRecForm(false);
   };
 
-  const revenueOrders = useMemo(() => orders.filter(o => o.status === "Clôturée"), [orders]);
+  const revenueOrders = orders.filter(o => o.status === "Clôturée");
   // CA : commandes clôturées, filtrées par période si active (sur la date de livraison ou de retour)
   const revenueOrdersP = periodeActive ? revenueOrders.filter(o => dansPeriode(o.deliveryDate || o.returnDate)) : revenueOrders;
   // Dépenses : filtrées par période (date de la dépense) ET par catégorie
   const expensesP = expenses.filter(e => (!periodeActive || dansPeriode(e.date)) && (filterCatSynth === "Toutes" || e.category === filterCatSynth));
   const totalRevenu = revenueOrdersP.reduce((s, o) => s + orderTotal(o, settings), 0);
-  const totalLivraison = revenueOrdersP.reduce((s, o) => s + deliveryCostOf(o, settings) + deliveryExtrasCost(o), 0);
-  const totalLavage = revenueOrdersP.reduce((s, o) => s + (o.items || []).reduce((si, i) => i.cleaningSelected ? si + (parseInt(i.qty) || 0) * (parseFloat(i.cleaningPrice) || 0) : si, 0), 0);
+  const totalLivraison = revenueOrdersP.reduce((s, o) => s + deliveryCostOf(o, settings), 0);
   const totalDepenses = expensesP.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
   const benefice = totalRevenu - totalDepenses;
   const totalAcomptes = (periodeActive ? orders.filter(o => dansPeriode(o.deliveryDate || o.returnDate)) : orders).reduce((s, o) => s + parseFloat(o.acompte || 0), 0);
@@ -2916,9 +2420,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
   const totalFiltered = filtered.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
 
   // ── Seuil de rentabilité par article
-  // Calcul lourd (stock × commandes clôturées × articles) : mémorisé pour ne tourner que lorsque
-  // stock, expenses ou orders changent réellement — pas à chaque frappe dans un champ du formulaire.
-  const rentabilite = useMemo(() => stock.map(item => {
+  const rentabilite = stock.map(item => {
     const totalAchat = expenses.filter(e => e.linkedItemId === item.id).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
     const revenusGeneres = revenueOrders.reduce((s, o) => {
       let total = 0;
@@ -2947,7 +2449,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
     const locsNeeded = totalAchat > 0 && locParItem > 0 ? Math.ceil(totalAchat / locParItem) : null;
     const pct = totalAchat > 0 ? Math.min(100, (revenusGeneres / totalAchat) * 100) : 0;
     return { ...item, totalAchat, revenusGeneres, qtéAchetee, locsNeeded, pct, amorti: revenusGeneres >= totalAchat };
-  }).filter(r => r.totalAchat > 0).sort((a, b) => b.totalAchat - a.totalAchat), [stock, expenses, revenueOrders]);
+  }).filter(r => r.totalAchat > 0).sort((a, b) => b.totalAchat - a.totalAchat);
 
   const openAdd = () => { setEditExp(null); setForm({ date: TODAY, label: "", category: "Achat matériel", amount: "", supplier: "", paymentMethod: "CB", notes: "", linkedItemId: "", linkedQty: 0 }); setShowForm(true); };
   const openEdit = (e) => { setEditExp(e.id); setForm({ ...e }); setShowForm(true); };
@@ -2982,7 +2484,6 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
           { label: "Total dépenses", value: totalDepenses.toFixed(2) + " €", icon: "🛒", color: "#ef4444" },
           { label: "Bénéfice net", value: benefice.toFixed(2) + " €", icon: benefice >= 0 ? "✅" : "⚠️", color: benefice >= 0 ? "#10b981" : "#ef4444" },
           { label: "Revenus livraison", value: totalLivraison.toFixed(2) + " €", icon: "🚚", color: "#6366f1" },
-          { label: "Revenus lavage", value: totalLavage.toFixed(2) + " €", icon: "🧼", color: "#06b6d4" },
         ].map(s => <Card key={s.label}><div style={{ fontSize: 20, marginBottom: 6 }}>{s.icon}</div><div style={{ fontSize: "clamp(15px, 4.5vw, 22px)", fontWeight: 900, color: s.color, whiteSpace: "nowrap" }}>{s.value}</div><div style={{ fontSize: 10, color: "#999", fontWeight: 700, textTransform: "uppercase", marginTop: 2 }}>{s.label}</div></Card>)}
       </div>
 
@@ -3159,7 +2660,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
                     <div style={{ display: "flex", gap: 6 }}>
                       <Btn variant="secondary" size="sm" onClick={() => setRecurringExpenses(prev => prev.map(x => x.id === r.id ? { ...x, active: x.active === false } : x))}>{r.active === false ? "▶️" : "⏸️"}</Btn>
                       <Btn variant="secondary" size="sm" onClick={() => openEditRec(r)}><span style={{ width: 13, height: 13 }}>{I.edit}</span></Btn>
-                      <Btn variant="danger" size="sm" onClick={async () => { if (await askConfirm("Supprimer cette dépense récurrente ?")) setRecurringExpenses(prev => prev.filter(x => x.id !== r.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>
+                      <Btn variant="danger" size="sm" onClick={() => { if (confirm("Supprimer cette dépense récurrente ?")) setRecurringExpenses(prev => prev.filter(x => x.id !== r.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>
                     </div>
                   </div>
                 ))}
@@ -3197,7 +2698,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
                       <td style={{ padding: "12px 16px", fontSize: 13 }}>{exp.supplier || "—"}</td>
                       <td style={{ padding: "12px 16px", fontSize: 13 }}>{exp.paymentMethod}</td>
                       <td style={{ padding: "12px 16px" }}><span style={{ fontWeight: 900, fontSize: 15, color: "#ef4444" }}>{(parseFloat(exp.amount) || 0).toFixed(2)} €</span></td>
-                      <td style={{ padding: "12px 16px" }}><div style={{ display: "flex", gap: 6 }}><Btn variant="secondary" size="sm" onClick={() => openEdit(exp)}><span style={{ width: 13, height: 13 }}>{I.edit}</span></Btn><Btn variant="danger" size="sm" onClick={async () => { if (await askConfirm("Supprimer ?")) setExpenses(prev => prev.filter(e => e.id !== exp.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn></div></td>
+                      <td style={{ padding: "12px 16px" }}><div style={{ display: "flex", gap: 6 }}><Btn variant="secondary" size="sm" onClick={() => openEdit(exp)}><span style={{ width: 13, height: 13 }}>{I.edit}</span></Btn><Btn variant="danger" size="sm" onClick={() => { if (confirm("Supprimer ?")) setExpenses(prev => prev.filter(e => e.id !== exp.id), true); }}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn></div></td>
                     </tr>
                   );
                 })}
@@ -3211,35 +2712,13 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
 
       {/* ── REVENUS ── */}
       {activeTab === "revenus" && (
-        <>
-        {/* Synthèse par moyen de paiement */}
-        <Card style={{ marginBottom: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12 }}>💳 Acomptes encaissés par canal</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {[
-              { key: "paypal", label: "💙 PayPal" }, { key: "virement", label: "🏦 Virement" },
-              { key: "especes", label: "💵 Espèces" }, { key: "cheque", label: "📄 Chèque" }, { key: "cb", label: "💳 CB" },
-            ].map(({ key, label }) => {
-              const total = orders.reduce((s, o) => o.acompteMoyen === key ? s + (parseFloat(o.acompte) || 0) : s, 0);
-              const count = orders.filter(o => o.acompteMoyen === key && (parseFloat(o.acompte) || 0) > 0).length;
-              if (total === 0) return null;
-              return (
-                <div key={key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: "#f8f9fa", borderRadius: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>{label}</span>
-                  <span style={{ fontSize: 13 }}><strong>{total.toFixed(2)} €</strong> <span style={{ color: "#999", fontSize: 11 }}>({count} commande{count > 1 ? "s" : ""})</span></span>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
         <Card style={{ padding: 0, overflow: "hidden" }}>
          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", minWidth: 620, borderCollapse: "collapse" }}>
-            <thead><tr style={{ background: "#f8f9fa" }}>{["N° Commande", "Client", "Date", "Statut", "Acompte", "Canal", "Total", "Reste"].map(h => <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 800, color: "#999", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+          <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse" }}>
+            <thead><tr style={{ background: "#f8f9fa" }}>{["N° Commande", "Client", "Date", "Statut", "Acompte", "Total", "Reste"].map(h => <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 11, fontWeight: 800, color: "#999", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>
               {[...orders].sort((a, b) => (b.deliveryDate || "").localeCompare(a.deliveryDate || "")).map((o, idx) => {
                 const t = orderTotal(o, settings); const a = parseFloat(o.acompte || 0); const r = t - a;
-                const MOYEN = { paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" };
                 return (
                   <tr key={o.id} style={{ borderTop: "1px solid #f0f0f0", background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
                     <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#666" }}>{o.id}</td>
@@ -3247,7 +2726,6 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
                     <td style={{ padding: "12px 16px", fontSize: 13, color: "#666" }}>{fmtD(o.deliveryDate) || "—"}</td>
                     <td style={{ padding: "12px 16px" }}><Badge status={o.status} /></td>
                     <td style={{ padding: "12px 16px", fontWeight: 700, color: "#3b82f6" }}>{a.toFixed(2)} €</td>
-                    <td style={{ padding: "12px 16px", fontSize: 12 }}>{o.acompteMoyen ? MOYEN[o.acompteMoyen] || o.acompteMoyen : "—"}</td>
                     <td style={{ padding: "12px 16px", fontWeight: 900, fontSize: 15 }}>{t.toFixed(2)} €</td>
                     <td style={{ padding: "12px 16px" }}><span style={{ fontWeight: 800, color: r > 0 ? "#f59e0b" : "#10b981" }}>{r <= 0 ? "✓ Soldé" : r.toFixed(2) + " €"}</span></td>
                   </tr>
@@ -3257,14 +2735,12 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
             <tfoot><tr style={{ background: "#f0fdf4", borderTop: "2px solid #d1fae5" }}>
               <td colSpan={4} style={{ padding: "12px 16px", fontWeight: 800 }}>TOTAL ({orders.length} commandes)</td>
               <td style={{ padding: "12px 16px", fontWeight: 800, color: "#3b82f6" }}>{totalAcomptes.toFixed(2)} €</td>
-              <td />
               <td style={{ padding: "12px 16px", fontWeight: 900, fontSize: 17, color: "#10b981" }}>{orders.reduce((s, o) => s + orderTotal(o, settings), 0).toFixed(2)} €</td>
               <td style={{ padding: "12px 16px", fontWeight: 800, color: "#f59e0b" }}>{orders.reduce((s, o) => s + orderTotal(o, settings) - parseFloat(o.acompte || 0), 0).toFixed(2)} €</td>
             </tr></tfoot>
           </table>
          </div>
         </Card>
-        </>
       )}
 
       {/* Modal gestion des catégories */}
@@ -3288,14 +2764,14 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
                 }}
                 style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 16, fontFamily: "inherit", background: "#fff", color: "#1a1a2e" }}
               />
-              <button onClick={async () => {
+              <button onClick={() => {
                 const cats = expenseCategories || EXPENSE_CATEGORIES;
                 if (cats.length <= 1) { alert("Il faut au moins une catégorie."); return; }
                 const nbUsed = expenses.filter(e => e.category === cat).length;
                 const msg = nbUsed > 0
                   ? `${nbUsed} dépense(s) utilisent "${cat}". Les basculer vers "Autre" et supprimer cette catégorie ?`
                   : `Supprimer la catégorie "${cat}" ?`;
-                if (!(await askConfirm(msg))) return;
+                if (!confirm(msg)) return;
                 if (nbUsed > 0) setExpenses(prev => prev.map(e => e.category === cat ? { ...e, category: "Autre" } : e));
                 setExpenseCategories(cats.filter(c => c !== cat), true);
               }} style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #fecaca", background: "#fef2f2", color: "#dc2626", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>🗑️</button>
@@ -3338,10 +2814,10 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
                   setExpenseCategories(updated);
                   setF("category", trimmed);
                 }} style={{ padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e5e7eb", background: "#f0fdf4", color: "#15803d", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: 16, flexShrink: 0 }} title="Ajouter une catégorie">+</button>
-                <button onClick={async () => {
+                <button onClick={() => {
                   const cats = expenseCategories || EXPENSE_CATEGORIES;
                   if (cats.length <= 1) { alert("Il faut au moins une catégorie."); return; }
-                  if (!(await askConfirm(`Supprimer la catégorie "${form.category}" ?`))) return;
+                  if (!confirm(`Supprimer la catégorie "${form.category}" ?`)) return;
                   const updated = cats.filter(c => c !== form.category);
                   setExpenseCategories(updated);
                   setF("category", updated[0] || "");
@@ -3393,7 +2869,6 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
   );
 }
 function RetourCasse({ order, stock, onSave, onClose, settings }) {
-  const [askConfirm, ConfirmUI] = useConfirm();
   // Pour chaque article : qty rendue OK, qty cassée/perdue
   const [retours, setRetours] = useState(() =>
     order.items.map(item => ({
@@ -3409,8 +2884,8 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
     }))
   );
   const [margePercent, setMargePercent] = useState((settings && settings.casseMargePercent) || 30);
+  const [notes, setNotes] = useState("");
   const [confirmed, setConfirmed] = useState(false);
-  const [showDeliveryRecap, setShowDeliveryRecap] = useState(false);
 
   const setR = (id, field, value) => {
     setRetours(prev => prev.map(r => {
@@ -3449,6 +2924,19 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
   const cautionAbsorbeeParCasse = cautionEncaisseeReellement ? Math.min(cautionMontant, totalCasse) : 0;
   const casseRestantApresCaution = cautionEncaisseeReellement ? Math.max(0, totalCasse - cautionMontant) : totalCasse;
 
+  const handleConfirm = () => {
+    const result = {
+      orderId: order.id,
+      date: new Date().toISOString().split("T")[0],
+      retours,
+      margePercent,
+      totalCasse,
+      notes,
+    };
+    onSave(result);
+    setConfirmed(true);
+  };
+
   const MOYEN_LABELS = { paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" };
   const CAUTION_MOYEN_LABELS = { cheque: "Chèque", especes: "Espèces", virement: "Virement", paypal: "PayPal", cb: "CB" };
 
@@ -3462,34 +2950,6 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
           {order.items.length} article(s) · Total loué : {retours.reduce((s, r) => s + r.qtyCommande, 0)} unités
         </div>
       </div>
-
-      {order.deliverySignature && (
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden" }}>
-          <div onClick={() => setShowDeliveryRecap(s => !s)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", background: "#eff6ff", cursor: "pointer" }}>
-            <span style={{ fontSize: 18 }}>🚚</span>
-            <span style={{ flex: 1, fontWeight: 800, fontSize: 13, color: "#1e40af" }}>État constaté à la livraison/retrait</span>
-            <span style={{ fontSize: 12, color: "#1e40af", transform: showDeliveryRecap ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▼</span>
-          </div>
-          {showDeliveryRecap && (
-            <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-              {(order.etageActive || order.miseEnPlaceActive) && (
-                <div style={{ background: "#f8f9fa", borderRadius: 8, padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {order.etageActive && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#444" }}><span>🪜 Monter à l'étage ({order.etageNbEtages || 1})</span><span style={{ fontWeight: 700 }}>{(parseFloat(order.etagePrice) || 0).toFixed(2)} €</span></div>}
-                  {order.miseEnPlaceActive && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#444" }}><span>🛠️ Mise en place</span><span style={{ fontWeight: 700 }}>{(parseFloat(order.miseEnPlacePrice) || 0).toFixed(2)} €</span></div>}
-                </div>
-              )}
-              <div style={{ fontSize: 12, color: "#666" }}>✅ Signé par {order.deliverySignedBy} {order.deliverySignedAt && `· ${new Date(order.deliverySignedAt).toLocaleString("fr-FR")}`}</div>
-              {order.deliveryComment && <div style={{ fontSize: 13, color: "#444", background: "#f8f9fa", borderRadius: 8, padding: "8px 12px" }}>💬 {order.deliveryComment}</div>}
-              {order.deliveryPhotos && order.deliveryPhotos.length > 0 && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {order.deliveryPhotos.map((url, i) => <a key={i} href={url} target="_blank" rel="noreferrer"><img src={url} style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover" }} /></a>)}
-                </div>
-              )}
-              <img src={order.deliverySignature} style={{ maxHeight: 60, maxWidth: 180, background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }} />
-            </div>
-          )}
-        </div>
-      )}
 
       {confirmed ? (
         <div style={{ textAlign: "center", padding: 30 }}>
@@ -3541,32 +3001,32 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
                       {r.prixCasseCustom != null && <button onClick={() => setPrixCasse(r.id, "")} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>↺ auto</button>}
                     </div>
                   </div>
-                  {/* Champs Rendu / Cassé en colonne (pleine largeur sur mobile) */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "2px solid #10b981" }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: "#10b981", textTransform: "uppercase", marginBottom: 6 }}>Rendu ✓</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue - 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
+                  {/* Champs Rendu / Cassé côte à côte */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <div style={{ background: "#fff", borderRadius: 10, padding: "8px 10px", border: "2px solid #10b981" }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#10b981", textTransform: "uppercase", marginBottom: 4 }}>Rendu ✓</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue - 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
                         <input type="text" inputMode="numeric"
                           value={r.qtyRendue === 0 ? "" : String(r.qtyRendue)}
                           placeholder="0"
                           onChange={e => setR(r.id, "qtyRendue", e.target.value)}
                           onFocus={e => e.target.select()}
-                          style={{ flex: 1, minWidth: 0, padding: "8px", borderRadius: 8, border: "none", background: "#f0fdf4", fontWeight: 900, fontSize: 22, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
-                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue + 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
+                          style={{ width: "100%", minWidth: 0, padding: "6px", borderRadius: 8, border: "none", background: "#f0fdf4", fontWeight: 800, fontSize: 16, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
+                        <button onClick={() => setR(r.id, "qtyRendue", r.qtyRendue + 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
                       </div>
                     </div>
-                    <div style={{ background: "#fff", borderRadius: 10, padding: "10px 12px", border: "2px solid #ef4444" }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", marginBottom: 6 }}>Cassé 💔</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse - 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
+                    <div style={{ background: "#fff", borderRadius: 10, padding: "8px 10px", border: "2px solid #ef4444" }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", textTransform: "uppercase", marginBottom: 4 }}>Cassé 💔</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse - 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>−</button>
                         <input type="text" inputMode="numeric"
                           value={r.qtyCasse === 0 ? "" : String(r.qtyCasse)}
                           placeholder="0"
                           onChange={e => setR(r.id, "qtyCasse", e.target.value)}
                           onFocus={e => e.target.select()}
-                          style={{ flex: 1, minWidth: 0, padding: "8px", borderRadius: 8, border: "none", background: "#fee2e2", fontWeight: 900, fontSize: 22, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
-                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse + 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 22, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
+                          style={{ width: "100%", minWidth: 0, padding: "6px", borderRadius: 8, border: "none", background: "#fee2e2", fontWeight: 800, fontSize: 16, textAlign: "center", fontFamily: "inherit", outline: "none" }} />
+                        <button onClick={() => setR(r.id, "qtyCasse", r.qtyCasse + 1)} style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 8, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 }}>+</button>
                       </div>
                     </div>
                   </div>
@@ -3632,40 +3092,31 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
             </div>
           )}
 
-          {/* Notes + signature : remplacé par BonCapture (commentaire + photos + signature client
-              obligatoire avant de pouvoir valider le retour). */}
+          {/* Notes */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase" }}>Notes retour</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="État général du matériel, observations..."
+              rows={2}
+              style={{ padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, fontFamily: "inherit", resize: "vertical" }} />
+          </div>
+
           {!allRendu && (
             <div style={{ background: "#fef9c3", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#92400e", fontWeight: 600 }}>
               ⚠️ Vérifiez que rendu + cassé = quantité commandée pour chaque article avant de valider.
             </div>
           )}
 
-          <div style={{ borderTop: "1.5px solid #f0f0f0", paddingTop: 16 }}>
-            <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 800 }}>✍️ Confirmation du retour</h3>
-            <BonCapture
-              orderId={order.id}
-              kind="retour"
-              confirmLabel={hasCasse ? `✅ Valider retour + facturer ${totalCasse} €` : "✅ Valider le retour"}
-              onConfirm={async (data) => {
-                const result = {
-                  orderId: order.id,
-                  date: new Date().toISOString().split("T")[0],
-                  retours, margePercent, totalCasse,
-                  notes: data.comment, photos: data.photos, signature: data.signature,
-                  signedBy: data.signedBy, signedAt: data.signedAt,
-                };
-                onSave(result);
-                setConfirmed(true);
-              }}
-            />
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
             <Btn variant="secondary" onClick={onClose}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleConfirm}
+              style={{ background: hasCasse ? "#dc2626" : "#10b981" }}>
+              <span style={{ width: 16, height: 16 }}>{I.check}</span>
+              {hasCasse ? `Valider retour + facturer ${totalCasse} €` : "Valider le retour"}
+            </Btn>
           </div>
         </>
       )}
-      {ConfirmUI}
     </div>
   );
 }
@@ -3674,9 +3125,7 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
 
 
 // ─── INTERFACE LIVREUR (livraisons du jour) ──────────────────────────────────
-function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery, onRetour, onEncaisser, onDeletePhoto }) {
-  const [askConfirm, ConfirmUI] = useConfirm();
-  const [signingOrder, setSigningOrder] = useState(null); // commande en cours de signature de livraison
+function DeliveryInterface({ orders, stock, settings, onShare, onMarkDelivered, onRetour, onEncaisser }) {
   const [selected, setSelected] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [sousTab, setSousTab] = useState("livraison");
@@ -3725,7 +3174,7 @@ function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery
           <Btn variant="secondary" size="sm" onClick={() => setSelected(order)} style={{ flex: 1 }}><span style={{ width: 14, height: 14 }}>{I.eye}</span> Voir fiche</Btn>
           <Btn variant={copiedId === order.id ? "success" : "primary"} size="sm" onClick={() => copyFiche(order)} style={{ flex: 1 }}><span style={{ width: 14, height: 14 }}>{copiedId === order.id ? I.check : I.copy}</span>{copiedId === order.id ? "Copié !" : "Copier"}</Btn>
         </div>
-        <Btn variant="primary" size="sm" onClick={() => setSigningOrder(order)} style={{ width: "100%" }}>✅ Marquer comme {order.deliveryMode === "livraison" ? "livré" : "retiré"}</Btn>
+        <Btn variant="primary" size="sm" onClick={() => { if (window.confirm(`Confirmer ${order.deliveryMode === "livraison" ? "la livraison chez" : "le retrait par"} ${order.clientName} ?\n\nLa commande passera en statut "Livrée".`)) onMarkDelivered(order.id); }} style={{ width: "100%" }}>✅ Marquer comme {order.deliveryMode === "livraison" ? "livré" : "retiré"}</Btn>
       </Card>
     );
   };
@@ -3749,19 +3198,7 @@ function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery
 
       {listeAffichee.length > 0 ? listeAffichee.map(o => <OrderCard key={o.id} order={o} />)
         : <div style={{ textAlign: "center", padding: 60, color: "#999" }}><div style={{ fontSize: 48, marginBottom: 12 }}>{sousTab === "livraison" ? "🚚" : "🏪"}</div><div style={{ fontWeight: 700 }}>Aucun{sousTab === "livraison" ? "e livraison" : " retrait"} à préparer</div><div style={{ fontSize: 13, marginTop: 6 }}>Les récupérations se gèrent dans le menu « Retours ».</div></div>}
-      <Modal open={!!selected} onClose={() => setSelected(null)} title="Fiche de livraison" wide><DeliverySheet order={selected || {}} settings={settings} onShare={onShare} stock={stock} onEncaisser={onEncaisser} onDeletePhoto={onDeletePhoto} allOrders={orders} /></Modal>
-
-      <Modal open={!!signingOrder} onClose={() => setSigningOrder(null)} title={signingOrder ? `✍️ Confirmer ${signingOrder.deliveryMode === "livraison" ? "la livraison" : "le retrait"} — ${signingOrder.clientName}` : ""}>
-        {signingOrder && (
-          <BonCapture
-            orderId={signingOrder.id}
-            kind="livraison"
-            confirmLabel={`✅ Confirmer ${signingOrder.deliveryMode === "livraison" ? "la livraison" : "le retrait"}`}
-            onConfirm={async (data) => { onConfirmDelivery(signingOrder.id, data); setSigningOrder(null); }}
-          />
-        )}
-      </Modal>
-      {ConfirmUI}
+      <Modal open={!!selected} onClose={() => setSelected(null)} title="Fiche de livraison" wide><DeliverySheet order={selected || {}} settings={settings} onShare={onShare} stock={stock} onEncaisser={onEncaisser} /></Modal>
     </div>
   );
 }
@@ -3893,7 +3330,6 @@ function RetoursView({ orders, stock, settings, onRetour }) {
 
 // ─── RÉGLAGES ─────────────────────────────────────────────────────────────────
 function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveClientId, setDriveClientId, orders, setOrders, clients, setClients, stock, expenses, pushTokens, setPushTokens, userRoles, setUserRoles, myRole }) {
-  const [askConfirm, ConfirmUI] = useConfirm();
   const [tab, setTab] = useState(myRole === "livreur" ? "notifications" : "entreprise");
   const [local, setLocal] = useState(settings);
   // Met à jour le formulaire quand les réglages arrivent de Firestore
@@ -3901,8 +3337,6 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
   const [saved, setSaved] = useState(false);
   // Notifications push
   const [notifStatus, setNotifStatus] = useState("idle"); // idle | loading | ok | err | denied
-  const [openNotifSections, setOpenNotifSections] = useState(new Set()); // sections de notif dépliées
-  const toggleNotifSection = (key) => setOpenNotifSections(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const myToken = useMemo(() => {
     try { return localStorage.getItem("eventdream_fcm_token") || null; } catch { return null; }
   }, []);
@@ -3997,7 +3431,7 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
     } catch { setDriveStatus("error"); }
   };
 
-  const allTabs = [{ id: "entreprise", label: "🏢 Entreprise" }, { id: "tarifs", label: "💶 Tarifs" }, { id: "livraison", label: "🚚 Livraison" }, { id: "divers", label: "⚙️ Divers" }, { id: "notifications", label: "🔔 Notifications" }, { id: "campagnes", label: "📧 Campagnes" }, { id: "cloud", label: "☁️ Cloud" }, { id: "sauvegardes", label: "💾 Sauvegardes" }, { id: "comptes", label: "👥 Comptes" }];
+  const allTabs = [{ id: "entreprise", label: "🏢 Entreprise" }, { id: "tarifs", label: "💶 Tarifs" }, { id: "divers", label: "⚙️ Divers" }, { id: "notifications", label: "🔔 Notifications" }, { id: "campagnes", label: "📧 Campagnes" }, { id: "cloud", label: "☁️ Cloud" }, { id: "comptes", label: "👥 Comptes" }];
   // Un livreur n'a accès qu'aux réglages qui le concernent (activer ses propres notifications) :
   // pas la fiche entreprise, les tarifs, la sauvegarde cloud ou la gestion des comptes.
   const tabs = myRole === "livreur" ? allTabs.filter(t => t.id === "notifications") : allTabs;
@@ -4006,7 +3440,7 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
     <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ background: "#fff", borderRadius: 12, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: "#666" }}>👤 Connecté : <strong>{auth.currentUser ? auth.currentUser.email : ""}</strong></div>
-        <button onClick={async () => { if (await askConfirm("Se déconnecter de l'application ?")) signOut(auth); }} style={{ padding: "8px 16px", borderRadius: 10, border: "1.5px solid #ef4444", background: "#fff", color: "#ef4444", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>🚪 Se déconnecter</button>
+        <button onClick={() => { if (window.confirm("Se déconnecter de l'application ?")) signOut(auth); }} style={{ padding: "8px 16px", borderRadius: 10, border: "1.5px solid #ef4444", background: "#fff", color: "#ef4444", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>🚪 Se déconnecter</button>
       </div>
       <div style={{ display: "flex", gap: 4, background: "#f0f0f0", borderRadius: 12, padding: 4, width: "fit-content", flexWrap: "wrap" }}>
         {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "8px 16px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13, background: tab === t.id ? "#fff" : "transparent", color: tab === t.id ? "#1a1a2e" : "#999", boxShadow: tab === t.id ? "0 2px 8px rgba(0,0,0,0.08)" : "none" }}>{t.label}</button>)}
@@ -4075,42 +3509,6 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
         </Card>
       )}
 
-      {tab === "livraison" && (
-        <Card>
-          <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 800 }}>🚚 Tarification automatique des options de livraison</h3>
-          <div style={{ fontSize: 13, color: "#666", marginBottom: 16, lineHeight: 1.5 }}>
-            Pour chaque article de ton stock : <strong>Monter à l'étage</strong> se calcule en nombre de trajets (selon combien tu peux porter à la fois) × prix du trajet × nombre d'étages. <strong>Mise en place</strong> se calcule par un simple prix unitaire × quantité commandée. Si rien n'est renseigné pour un article, son option vaut 0 € (tu pourras toujours corriger le prix à la main sur chaque devis).
-          </div>
-          {[...new Set((stock || []).map(s => s.category).filter(Boolean))].sort().map(cat => (
-            <div key={cat} style={{ marginBottom: 18 }}>
-              <div style={{ fontWeight: 900, fontSize: 13, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>{cat}</div>
-              {(stock || []).filter(s => s.category === cat).map(item => (
-                <div key={item.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, marginBottom: 10 }}>
-                  <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12 }}>{item.icon} {item.name}</div>
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase", marginBottom: 6 }}>🪜 Monter à l'étage</div>
-                    <EtageBaremeFields
-                      cfg={(local.deliveryEtageBaremes || {})[item.id]}
-                      onChange={cfg => setL("deliveryEtageBaremes", { ...(local.deliveryEtageBaremes || {}), [item.id]: cfg })}
-                    />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase", marginBottom: 6 }}>🛠️ Mise en place</div>
-                    <MiseEnPlaceBaremeFields
-                      cfg={(local.deliveryMiseEnPlaceBaremes || {})[item.id]}
-                      onChange={cfg => setL("deliveryMiseEnPlaceBaremes", { ...(local.deliveryMiseEnPlaceBaremes || {}), [item.id]: cfg })}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-          {(stock || []).length === 0 && (
-            <div style={{ fontSize: 13, color: "#999", textAlign: "center", padding: 20 }}>Aucun article trouvé — ajoute des articles dans le Stock pour configurer leurs barèmes.</div>
-          )}
-        </Card>
-      )}
-
       {tab === "divers" && (
         <Card>
           <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 800 }}>⚙️ Réglages divers</h3>
@@ -4122,10 +3520,6 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <label style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase" }}>Conditions générales (bas du devis)</label>
               <textarea value={local.conditions} onChange={e => setL("conditions", e.target.value)} rows={3} style={{ padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, fontFamily: "inherit", resize: "vertical" }} />
-            </div>
-            <div style={{ background: "#f8f9fa", borderRadius: 10, padding: "12px 14px" }}>
-              <Inp label="📷 Suppression auto des photos (livraison/retour) après clôture" type="number" value={local.photoRetentionDays} onChange={v => setL("photoRetentionDays", parseInt(v) || 0)} min="0" suffix="jours" />
-              <div style={{ fontSize: 11, color: "#999", marginTop: 6, lineHeight: 1.4 }}>💡 0 = ne jamais supprimer automatiquement. Le commentaire et la signature restent conservés, seules les photos sont effacées (espace de stockage).</div>
             </div>
           </div>
           <div style={{ borderTop: "1px solid #f0f0f0", marginTop: 20, paddingTop: 16 }}>
@@ -4225,42 +3619,59 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
           {myRole !== "livreur" && (
           <Card>
             <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 800 }}>🔔 Types de notifications (toute l'équipe)</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", paddingBottom: 6, borderBottom: "1px solid #f0f0f0" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
                 <input type="checkbox" checked={!!local.notifyOnValidation} onChange={e => setL("notifyOnValidation", e.target.checked)} style={{ width: 18, height: 18 }} />
                 <span style={{ fontSize: 14, fontWeight: 700 }}>✅ Commande validée (Devis → Confirmée)</span>
               </label>
 
-              {[
-                { key: "Preparation", icon: "🔄", title: "Commande à préparer (départ qui approche)", label: "avant le départ" },
-                { key: "Livraison", icon: "🚚", title: "Approche d'une livraison", label: "avant la livraison" },
-                { key: "Retrait", icon: "🏪", title: "Approche d'un retrait", label: "avant le retrait" },
-                { key: "Retour", icon: "↩️", title: "Approche d'un retour", label: "avant le retour" },
-              ].map(sec => {
-                const enabledKey = `notif${sec.key}Enabled`;
-                const isOpen = openNotifSections.has(sec.key);
-                return (
-                  <div key={sec.key} style={{ border: "1px solid #f0f0f0", borderRadius: 10, overflow: "hidden" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#fafafa", cursor: "pointer" }} onClick={() => toggleNotifSection(sec.key)}>
-                      <input type="checkbox" checked={!!local[enabledKey]} onClick={e => e.stopPropagation()} onChange={e => setL(enabledKey, e.target.checked)} style={{ width: 18, height: 18, flexShrink: 0 }} />
-                      <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{sec.icon} {sec.title}</span>
-                      <span style={{ fontSize: 12, color: "#999", fontWeight: 700 }}>{getDelais(sec.key).join("h, ")}h</span>
-                      <span style={{ fontSize: 12, color: "#999", transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>▼</span>
+              <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 14 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 10 }}>
+                  <input type="checkbox" checked={!!local.notifLivraisonEnabled} onChange={e => setL("notifLivraisonEnabled", e.target.checked)} style={{ width: 18, height: 18 }} />
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>🚚 Approche d'une livraison</span>
+                </label>
+                <div style={{ marginLeft: 28, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {getDelais("Livraison").map((h, idx) => (
+                    <div key={idx} style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+                      <div style={{ flex: 1 }}><Inp label={idx === 0 ? "Délai(s) d'alerte avant la livraison" : ""} type="number" value={h} onChange={v => setDelai("Livraison", idx, v)} suffix="heures avant" disabled={!local.notifLivraisonEnabled} /></div>
+                      {getDelais("Livraison").length > 1 && <Btn variant="danger" size="sm" disabled={!local.notifLivraisonEnabled} onClick={() => removeDelai("Livraison", idx)}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>}
                     </div>
-                    {isOpen && (
-                      <div style={{ padding: "14px 14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-                        {getDelais(sec.key).map((h, idx) => (
-                          <div key={idx} style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-                            <div style={{ flex: 1 }}><Inp label={idx === 0 ? `Délai(s) d'alerte ${sec.label}` : ""} type="number" value={h} onChange={v => setDelai(sec.key, idx, v)} suffix="heures avant" disabled={!local[enabledKey]} /></div>
-                            {getDelais(sec.key).length > 1 && <Btn variant="danger" size="sm" disabled={!local[enabledKey]} onClick={() => removeDelai(sec.key, idx)}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>}
-                          </div>
-                        ))}
-                        <Btn variant="secondary" size="sm" disabled={!local[enabledKey]} onClick={() => addDelai(sec.key)}>+ Ajouter un délai</Btn>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                  ))}
+                  <Btn variant="secondary" size="sm" disabled={!local.notifLivraisonEnabled} onClick={() => addDelai("Livraison")}>+ Ajouter un délai</Btn>
+                </div>
+              </div>
+
+              <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 14 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 10 }}>
+                  <input type="checkbox" checked={!!local.notifRetraitEnabled} onChange={e => setL("notifRetraitEnabled", e.target.checked)} style={{ width: 18, height: 18 }} />
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>🏪 Approche d'un retrait</span>
+                </label>
+                <div style={{ marginLeft: 28, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {getDelais("Retrait").map((h, idx) => (
+                    <div key={idx} style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+                      <div style={{ flex: 1 }}><Inp label={idx === 0 ? "Délai(s) d'alerte avant le retrait" : ""} type="number" value={h} onChange={v => setDelai("Retrait", idx, v)} suffix="heures avant" disabled={!local.notifRetraitEnabled} /></div>
+                      {getDelais("Retrait").length > 1 && <Btn variant="danger" size="sm" disabled={!local.notifRetraitEnabled} onClick={() => removeDelai("Retrait", idx)}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>}
+                    </div>
+                  ))}
+                  <Btn variant="secondary" size="sm" disabled={!local.notifRetraitEnabled} onClick={() => addDelai("Retrait")}>+ Ajouter un délai</Btn>
+                </div>
+              </div>
+
+              <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 14 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 10 }}>
+                  <input type="checkbox" checked={!!local.notifRetourEnabled} onChange={e => setL("notifRetourEnabled", e.target.checked)} style={{ width: 18, height: 18 }} />
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>↩️ Approche d'un retour</span>
+                </label>
+                <div style={{ marginLeft: 28, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {getDelais("Retour").map((h, idx) => (
+                    <div key={idx} style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+                      <div style={{ flex: 1 }}><Inp label={idx === 0 ? "Délai(s) d'alerte avant le retour" : ""} type="number" value={h} onChange={v => setDelai("Retour", idx, v)} suffix="heures avant" disabled={!local.notifRetourEnabled} /></div>
+                      {getDelais("Retour").length > 1 && <Btn variant="danger" size="sm" disabled={!local.notifRetourEnabled} onClick={() => removeDelai("Retour", idx)}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>}
+                    </div>
+                  ))}
+                  <Btn variant="secondary" size="sm" disabled={!local.notifRetourEnabled} onClick={() => addDelai("Retour")}>+ Ajouter un délai</Btn>
+                </div>
+              </div>
             </div>
             <div style={{ background: "#f0f4ff", borderRadius: 10, padding: 12, fontSize: 12, color: "#3b82f6", marginTop: 16, lineHeight: 1.5 }}>
               💡 Ces réglages sont communs à toute l'équipe : tous les appareils enregistrés ci-dessus reçoivent les mêmes alertes. N'oublie pas de cliquer sur "Enregistrer" en bas de page après modification.
@@ -4325,10 +3736,6 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
         </Card>
       )}
 
-      {tab === "sauvegardes" && (
-        <BackupsPanel askConfirm={askConfirm} />
-      )}
-
       {tab === "comptes" && (
         <Card>
           <h3 style={{ margin: "0 0 8px", fontSize: 15, fontWeight: 800 }}>👥 Gestion des comptes</h3>
@@ -4379,189 +3786,11 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
         <Btn variant="primary" onClick={save}><span style={{ width: 16, height: 16 }}>{I.check}</span> Enregistrer les réglages</Btn>
       </div>}
       <div style={{ textAlign: "center", fontSize: 11, color: "#bbb", marginTop: 20, fontWeight: 700 }}>EventDream {APP_VERSION}</div>
-      {ConfirmUI}
     </div>
   );
 }
 
 // ─── APP PRINCIPALE ───────────────────────────────────────────────────────────
-// ─── PANNEAU DE SAUVEGARDES ───────────────────────────────────────────────────
-// Groupe de clients potentiellement en doublon avec bouton de fusion
-function DupGroup({ group, onMerged, askConfirm }) {
-  const [merging, setMerging] = useState(false);
-  const [merged, setMerged] = useState(false);
-
-  const doMerge = async () => {
-    const masterName = group.clients[0].name;
-    const names = group.clients.map(c => c.name).join(" + ");
-    if (!(await askConfirm(`Fusionner ces clients en un seul ?\n\n${names}\n\n✅ Le nom conservé sera : "${masterName}"\nLes téléphones et adresses des autres seront ajoutés.`))) return;
-    setMerging(true);
-    try {
-      await mergeSpecificClients(group.clients.map(c => c.id));
-      setMerged(true);
-      onMerged();
-    } catch (e) {
-      alert("Erreur : " + (e.message || "échec"));
-    }
-    setMerging(false);
-  };
-
-  if (merged) return null;
-  return (
-    <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: 12 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: "#92400e", marginBottom: 8 }}>{group.reason}</div>
-      {group.clients.map((c, i) => (
-        <div key={c.id} style={{ fontSize: 12, color: "#444", marginBottom: 4, paddingLeft: 8, borderLeft: `2px solid ${i === 0 ? "#10b981" : "#fde68a"}` }}>
-          {i === 0 && <span style={{ fontSize: 10, background: "#d1fae5", color: "#065f46", borderRadius: 4, padding: "1px 5px", marginRight: 4 }}>MAÎTRE</span>}
-          <strong>{c.name}</strong>
-          {(c.phones || []).filter(Boolean).length > 0 && <span style={{ color: "#666" }}> · {(c.phones || []).filter(Boolean).join(", ")}</span>}
-          {c.email && <span style={{ color: "#999" }}> · {c.email}</span>}
-        </div>
-      ))}
-      <Btn variant="primary" size="sm" disabled={merging} onClick={doMerge} style={{ marginTop: 10, width: "100%", background: "#f59e0b", fontSize: 13 }}>
-        {merging ? "⏳ Fusion..." : "🔀 Fusionner ce groupe"}
-      </Btn>
-    </div>
-  );
-}
-
-function BackupsPanel({ askConfirm }) {
-  const [backups, setBackups] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [fixing, setFixing] = useState(false);
-  const [findingDups, setFindingDups] = useState(false);
-  const [dupGroups, setDupGroups] = useState(null);
-  const [restoring, setRestoring] = useState(null);
-  const [msg, setMsg] = useState(null); // { type: "ok"|"err", text }
-
-  const doFix = async () => {
-    setFixing(true); setMsg(null);
-    try {
-      const res = await fixRecoveredIds();
-      setMsg({ type: "ok", text: `✅ ${res.fixedOrders} commande(s) corrigée(s), ${res.fixedItems} article(s) mis à jour. Recharge l'app pour vérifier.` });
-    } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec") }); }
-    setFixing(false);
-  };
-
-  const loadBackups = async () => {
-    setLoading(true);
-    try {
-      const { collection, query, orderBy, limit, getDocs } = await import("firebase/firestore");
-      const q = query(collection(db, "backups"), orderBy("createdAt", "desc"), limit(10));
-      const snap = await getDocs(q);
-      setBackups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (e) { setMsg({ type: "err", text: "Erreur lors du chargement : " + e.message }); }
-    setLoading(false);
-  };
-
-  useEffect(() => { loadBackups(); }, []);
-
-  const doBackup = async () => {
-    setSaving(true); setMsg(null);
-    try {
-      const res = await triggerBackup();
-      setMsg({ type: "ok", text: `✅ Sauvegarde créée : ${res.orderCount} commandes, ${res.clientCount} clients.` });
-      loadBackups();
-    } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec de la sauvegarde") }); }
-    setSaving(false);
-  };
-
-  const doRestore = async (backup) => {
-    const confirmed = await askConfirm(`Restaurer la sauvegarde du ${new Date(backup.createdAt).toLocaleString("fr-FR")} ?\n\n${backup.orderCount} commandes, ${backup.clientCount} clients.\n\n⚠️ L'état actuel sera d'abord sauvegardé automatiquement avant la restauration.`);
-    if (!confirmed) return;
-    setRestoring(backup.id); setMsg(null);
-    try {
-      const res = await restoreBackup(backup.id);
-      setMsg({ type: "ok", text: `✅ ${res.orderCount} commandes restaurées ! Recharge l'application pour voir les changements.` });
-      loadBackups();
-    } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec de la restauration") }); }
-    setRestoring(null);
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card>
-        <h3 style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 800 }}>💾 Sauvegardes automatiques</h3>
-        <div style={{ fontSize: 13, color: "#666", marginBottom: 14, lineHeight: 1.5 }}>
-          Une sauvegarde complète (commandes, clients, stock, dépenses, réglages) est créée automatiquement <strong>chaque nuit à 2h</strong>. Les 7 derniers jours sont conservés. En cas de problème, clique sur "Restaurer" pour remettre tout en état en quelques secondes.
-        </div>
-        <Btn variant="primary" onClick={doBackup} disabled={saving} style={{ width: "100%" }}>
-          {saving ? "⏳ Sauvegarde en cours..." : "💾 Sauvegarder maintenant"}
-        </Btn>
-        <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 12, marginTop: 4, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 12, color: "#999", marginBottom: 4 }}>🔧 Maintenance</div>
-          <Btn variant="secondary" onClick={doFix} disabled={fixing} style={{ width: "100%" }}>
-            {fixing ? "⏳ Correction en cours..." : "🔧 Corriger les articles manquants (recovered_xxx)"}
-          </Btn>
-          <Btn variant="secondary" onClick={async () => {
-            if (!(await askConfirm("Fusionner les clients en doublon ?\n\nLes clients avec le même nom OU le même numéro de téléphone seront fusionnés automatiquement (téléphones et adresses conservés)."))) return;
-            setMsg(null);
-            try {
-              const res = await deduplicateClients();
-              setMsg({ type: "ok", text: `✅ ${res.before} clients → ${res.after} clients (${res.removed} doublons supprimés). Recharge l'app.` });
-            } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec") }); }
-          }} style={{ width: "100%" }}>
-            👥 Fusionner les clients en doublon
-          </Btn>
-          <Btn variant="secondary" onClick={async () => {
-            setFindingDups(true); setDupGroups(null); setMsg(null);
-            try {
-              const res = await findDuplicateClients();
-              setDupGroups(res.groups);
-              if (res.count === 0) setMsg({ type: "ok", text: "✅ Aucun doublon potentiel détecté !" });
-            } catch (e) { setMsg({ type: "err", text: "Erreur : " + (e.message || "échec") }); }
-            setFindingDups(false);
-          }} disabled={findingDups} style={{ width: "100%" }}>
-            {findingDups ? "⏳ Recherche..." : "🔍 Rechercher les doublons restants"}
-          </Btn>
-        </div>
-      </Card>
-
-      {msg && <div style={{ background: msg.type === "ok" ? "#d1fae5" : "#fef2f2", color: msg.type === "ok" ? "#065f46" : "#b91c1c", borderRadius: 10, padding: "10px 14px", fontSize: 13, fontWeight: 700 }}>{msg.text}</div>}
-
-      {dupGroups && dupGroups.length > 0 && (
-        <Card>
-          <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 800 }}>🔍 {dupGroups.length} groupe(s) de doublons potentiels</h3>
-          <div style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>Le premier client de chaque groupe sera conservé comme "maître", les autres seront absorbés.</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {dupGroups.map((g, i) => (
-              <DupGroup key={i} group={g} onMerged={() => setDupGroups(prev => prev.filter((_, idx) => idx !== i))} askConfirm={askConfirm} />
-            ))}
-          </div>
-        </Card>
-      )}
-
-      <Card>
-        <h3 style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 800 }}>📋 Sauvegardes disponibles</h3>
-        {loading ? <div style={{ color: "#999", fontSize: 13 }}>Chargement...</div> : backups.length === 0 ? (
-          <div style={{ color: "#999", fontSize: 13, textAlign: "center", padding: 20 }}>Aucune sauvegarde disponible — crée la première manuellement ci-dessus.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {backups.map(b => (
-              <div key={b.id} style={{ background: "#f8f9fa", borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 800, fontSize: 13 }}>
-                    {new Date(b.createdAt).toLocaleString("fr-FR")}
-                    {b.manual && <span style={{ marginLeft: 6, fontSize: 11, background: "#e0e7ff", color: "#4338ca", borderRadius: 6, padding: "2px 6px" }}>Manuel</span>}
-                    {b.preRestore && <span style={{ marginLeft: 6, fontSize: 11, background: "#fef9c3", color: "#92400e", borderRadius: 6, padding: "2px 6px" }}>Avant restauration</span>}
-                  </div>
-                  <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                    {b.orderCount || 0} commandes · {b.clientCount || 0} clients
-                  </div>
-                </div>
-                <Btn variant="secondary" size="sm" disabled={restoring === b.id} onClick={() => doRestore(b)}>
-                  {restoring === b.id ? "⏳" : "↩️ Restaurer"}
-                </Btn>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
 function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -4633,36 +3862,7 @@ function LoginScreen() {
     </div>
   );
 }
-// Filet de sécurité contre les pages blanches (ex: après une reprise d'app instable suite à un
-// partage natif iOS) : si une erreur React imprévue survient, affiche un écran récupérable avec
-// un bouton "Recharger" plutôt que de laisser l'utilisateur bloqué sur une page vide.
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, message: "", stack: "" }; }
-  static getDerivedStateFromError(error) { return { hasError: true, message: error && error.message, stack: error && error.stack }; }
-  componentDidCatch(error, info) { console.error("Erreur React interceptée :", error, info); }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 24, textAlign: "center", fontFamily: "'Nunito', 'Segoe UI', sans-serif", background: "#f4f5f7" }}>
-          <div style={{ fontSize: 48 }}>😵</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#1a1a2e" }}>Oups, une erreur est survenue</div>
-          <div style={{ fontSize: 14, color: "#666", maxWidth: 320 }}>L'application a rencontré un problème inattendu (souvent après un retour depuis une autre app). Recharge pour continuer — tes données sont en sécurité.</div>
-          {/* Détail technique temporaire (phase de test) : à retirer une fois le bug du moment résolu */}
-          {this.state.message && (
-            <div style={{ maxWidth: 340, background: "#fff", border: "1.5px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 11, color: "#b91c1c", textAlign: "left", fontFamily: "monospace", maxHeight: 160, overflowY: "auto" }}>
-              {this.state.message}
-              {this.state.stack && <div style={{ marginTop: 6, color: "#999", whiteSpace: "pre-wrap" }}>{this.state.stack.split("\n").slice(0, 4).join("\n")}</div>}
-            </div>
-          )}
-          <button onClick={() => window.location.reload()} style={{ padding: "13px 28px", borderRadius: 10, border: "none", background: "#1a1a2e", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>🔄 Recharger l'application</button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-function AppInner() {
+export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   useEffect(() => {
@@ -4674,7 +3874,7 @@ function AppInner() {
   const [view, setViewRaw] = useState("dashboard");
   const setView = (v) => { setViewRaw(v); };
   // Données synchronisées avec Firestore (sauvegarde cloud automatique)
-  const [orders, setOrders] = useOrdersFirestore();
+  const [orders, setOrders] = useFirestoreState("orders", []);
   const [stock, setStock] = useFirestoreState("stock", INITIAL_STOCK);
   const [expenses, setExpenses] = useFirestoreState("expenses", []);
   const [clients, setClients] = useFirestoreState("clients", []);
@@ -4683,11 +3883,40 @@ function AppInner() {
   const [recurringExpenses, setRecurringExpenses] = useFirestoreState("recurringExpenses", []);
   const [pushTokens, setPushTokens] = useFirestoreState("pushTokens", []);
   const [userRoles, setUserRoles] = useFirestoreState("userRoles", {});
-  // NOTE : les migrations automatiques "kits par défaut" et "articles Décoration" (qui ajoutaient
-  // ces articles au stock s'ils étaient absents) ont été RETIRÉES après la v3.19. Elles avaient déjà
-  // rempli leur rôle ; les laisser actives recréait un article que l'utilisateur venait de supprimer
-  // volontairement, à chaque rechargement de l'app. Si un nouvel article par défaut doit être ajouté
-  // à l'avenir, mieux vaut le faire une fois manuellement plutôt que via une vérification permanente.
+  // Migration ponctuelle : les 3 kits par défaut (Couvert Sale/Propre, Apéritif) n'avaient
+  // jamais été enregistrés dans Firestore avant la v3.7.0 — on les ajoute une seule fois s'ils
+  // sont absents, sans toucher au reste du stock (ni aux kits déjà créés manuellement).
+  const kitsMigratedRef = useRef(false);
+  useEffect(() => {
+    if (kitsMigratedRef.current) return;
+    // "stock === INITIAL_STOCK" signifie qu'aucune vraie donnée Firestore n'est encore arrivée
+    // (c'est encore l'état initial local) — on attend la vraie synchronisation avant de juger.
+    if (stock === INITIAL_STOCK) return;
+    if (!Array.isArray(stock)) return;
+    kitsMigratedRef.current = true;
+    const existingIds = new Set(stock.map(s => s.id));
+    const missingKits = KITS.filter(k => !existingIds.has(k.id)).map(k => ({ ...k, total: 0, qtyCamion: 0, qtyLocal: 0, seuil: 0, enMaintenance: 0 }));
+    if (missingKits.length > 0) {
+      setStock(prev => [...(Array.isArray(prev) ? prev : []), ...missingKits]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stock]);
+
+  // Migration ponctuelle : ajoute les 4 articles "Décoration" créés pour l'import de l'historique
+  // (centre de table, serviette de table, arche ronde, backdrop), s'ils sont absents du stock.
+  const decoMigratedRef = useRef(false);
+  useEffect(() => {
+    if (decoMigratedRef.current) return;
+    if (stock === INITIAL_STOCK) return;
+    if (!Array.isArray(stock)) return;
+    decoMigratedRef.current = true;
+    const existingIds = new Set(stock.map(s => s.id));
+    const missingDeco = DECO_ARTICLES.filter(a => !existingIds.has(a.id)).map(a => ({ ...a, total: 0, qtyCamion: 0, qtyLocal: 0, seuil: 0, enMaintenance: 0 }));
+    if (missingDeco.length > 0) {
+      setStock(prev => [...(Array.isArray(prev) ? prev : []), ...missingDeco]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stock]);
 
   // Génère automatiquement la dépense du mois pour chaque modèle récurrent actif (loyer, box
   // internet, forfait téléphone...), s'il n'en existe pas déjà une pour ce mois. Vérifié à
@@ -4730,7 +3959,7 @@ function AppInner() {
   const [quickFilter, setQuickFilter] = useState(null); // "aPreparer" | null — déclenché depuis le tableau de bord
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const touchStartX = useRef(null);
-  // (shareModal retiré : sharePdf se contente désormais d'un téléchargement direct, sans fenêtre)
+  const [shareModal, setShareModal] = useState(null);
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
   const toggleExpand = (id) => setExpandedOrders(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -4747,23 +3976,16 @@ function AppInner() {
     }
     return [newOrder, ...prev];
   });
-  const [askConfirm, ConfirmUI] = useConfirm();
-  const deleteOrder = async (id) => { if (await askConfirm("Supprimer cette commande ?")) setOrders(prev => prev.filter(o => o.id !== id), true); };
+  const deleteOrder = (id) => { if (confirm("Supprimer cette commande ?")) setOrders(prev => prev.filter(o => o.id !== id), true); };
   const updateStatus = (id, status) => setOrders(prev => prev.map(o => {
     if (o.id !== id) return o;
     // Passage automatique en phase retour quand livré
-    const phase = ["Chez le client"].includes(status) ? "retour" : status === "Clôturée" ? "termine" : "livraison";
-    // Mémorise la date de clôture (référence pour la suppression auto des photos après X jours)
-    const closedAt = status === "Clôturée" && !o.closedAt ? new Date().toISOString() : o.closedAt;
-    return { ...o, status, phase, closedAt };
+    const phase = ["Livrée", "En cours", "Retour"].includes(status) ? "retour" : status === "Clôturée" ? "termine" : "livraison";
+    return { ...o, status, phase };
   }));
 
   const saveRetour = (result) => {
-    setOrders(prev => prev.map(o => o.id === result.orderId ? {
-      ...o, status: "Clôturée", phase: "termine", closedAt: o.closedAt || new Date().toISOString(),
-      returnComment: result.notes, returnPhotos: result.photos || [], returnSignature: result.signature || "",
-      returnSignedBy: result.signedBy || "", returnSignedAt: result.signedAt || "",
-    } : o));
+    updateStatus(result.orderId, "Clôturée");
     setStock(prev => prev.map(item => { const r = result.retours.find(r => r.id === item.id); if (!r) return item; return { ...item, total: Math.max(0, item.total - r.qtyCasse) }; }));
     if (result.totalCasse > 0) {
       const lines = result.retours.filter(r => r.qtyCasse > 0).map(r => `${r.name} ×${r.qtyCasse}`).join(", ");
@@ -4771,18 +3993,6 @@ function AppInner() {
       setExpenses(prev => [{ id: "CASSE-" + Date.now(), date: result.date, label: `Casse ${result.orderId} — ${lines}`, category: "Maintenance / Réparation", amount: result.totalCasse, supplier: o?.clientName || "", paymentMethod: "À facturer", notes: `Marge ${result.margePercent}% · ${result.notes}`, linkedItemId: "", linkedQty: 0 }, ...prev]);
     }
   };
-
-  // Confirme la livraison/retrait : enregistre le commentaire/photos/signature sur la commande
-  // ET passe son statut à "Livrée" en une seule fois (la signature est désormais obligatoire
-  // pour valider, plus de simple confirmation sans preuve).
-  const confirmDelivery = (orderId, data) => setOrders(prev => prev.map(o => {
-    if (o.id !== orderId) return o;
-    return {
-      ...o, status: "Chez le client", phase: "retour",
-      deliveryComment: data.comment, deliveryPhotos: data.photos || [], deliverySignature: data.signature || "",
-      deliverySignedBy: data.signedBy || "", deliverySignedAt: data.signedAt || "",
-    };
-  }));
 
   // Encaisser le solde : passe l'acompte au total (reste = 0) et enregistre le moyen de paiement du solde.
   const encaisserSolde = (orderId, moyen) => setOrders(prev => prev.map(o => {
@@ -4799,63 +4009,40 @@ function AppInner() {
       const datePart = (order.deliveryDate || "").split("-").reverse().join("-"); // jj-mm-aaaa
       const clientPart = (order.clientName || "client").replace(/[^a-zA-Z0-9À-ÿ]+/g, "_");
       const fname = [prefix, datePart, clientPart].filter(Boolean).join("_") + ".pdf";
-      // Volontairement simple : on télécharge le PDF, point final. Aucune fenêtre de partage,
-      // aucun lien généré par l'app, aucun partage natif déclenché par notre code (instable en
-      // PWA installée) — l'utilisateur choisit lui-même son app de partage depuis ses
-      // Téléchargements, en utilisant le bouton natif de son téléphone sur le fichier.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = fname; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const file = new File([blob], fname, { type: "application/pdf" });
+      const label = mode === "facture" ? "Facture" : "Devis";
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${label} ${prefix}`, text: `${label} ${settings.companyName} — ${order.clientName}` });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = fname; a.click();
+        URL.revokeObjectURL(url);
+        setShareModal(order);
+      }
     } catch (e) { console.error(e); alert("Erreur lors de la génération du PDF."); }
   };
 
-  // Supprime une photo (livraison ou retour) d'une commande : retire le fichier de Storage
-  // ET son URL du tableau correspondant sur la commande. kind: "delivery" | "return".
-  const deleteOrderPhoto = async (orderId, kind, index, url) => {
-    if (!(await askConfirm("Supprimer cette photo ? Cette action est définitive."))) return;
-    try { await deletePhoto(url); } catch (e) { console.error(e); }
-    const field = kind === "delivery" ? "deliveryPhotos" : "returnPhotos";
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, [field]: (o[field] || []).filter((_, i) => i !== index) } : o));
-  };
-
   const prepLimitNav = (() => { const d = new Date(); d.setDate(d.getDate() + 4); return d.toISOString().split("T")[0]; })();
-  const isAPreparer = (o) => !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status) && o.deliveryDate && o.deliveryDate >= TODAY && o.deliveryDate <= prepLimitNav;
-  const filtered = useMemo(() => orders
-    .filter(o => {
-      if (view === "devisEnAttente") return o.status === "Brouillon" || o.status === "Devis";
-      if (filterStatus === "Toutes" && (o.status === "Brouillon" || o.status === "Devis")) return false; // masqués par défaut, voir "Devis en attente"
-      return (filterStatus === "Toutes" || o.status === filterStatus);
-    })
-    .filter(o => ((o.clientName || "").toLowerCase().includes(searchQ.toLowerCase()) || (o.id || "").toLowerCase().includes(searchQ.toLowerCase())) && (quickFilter !== "aPreparer" || isAPreparer(o)))
-    .sort((a, b) => {
-      const aOpen = a.status !== "Clôturée", bOpen = b.status !== "Clôturée";
-      if (aOpen !== bOpen) return aOpen ? -1 : 1; // non clôturées toujours en premier
-      return (b.closedAt || b.returnDate || b.deliveryDate || "").localeCompare(a.closedAt || a.returnDate || a.deliveryDate || "");
-    }),
-    [orders, filterStatus, searchQ, quickFilter, view]);
-  const retourCount = useMemo(() => orders.filter(o => o.phase === "retour" && o.status !== "Clôturée").length, [orders]);
-  // Compteurs pour les badges du menu (mémorisés : ne se recalculent que si "orders" change réellement,
-  // pas à chaque frappe/clic dans l'app — important pour la fluidité avec un grand nombre de commandes)
+  const isAPreparer = (o) => !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status) && o.deliveryDate && o.deliveryDate >= TODAY && o.deliveryDate <= prepLimitNav;
+  const filtered = orders.filter(o => (filterStatus === "Toutes" || o.status === filterStatus) && (o.clientName.toLowerCase().includes(searchQ.toLowerCase()) || o.id.toLowerCase().includes(searchQ.toLowerCase())) && (quickFilter !== "aPreparer" || isAPreparer(o)));
+  const retourCount = orders.filter(o => o.phase === "retour" && o.status !== "Clôturée").length;
+  // Compteurs pour les badges du menu
   // Commandes à préparer : livraison/départ qui approche, pas encore traitées
-  const aPreparerCount = useMemo(() => orders.filter(isAPreparer).length, [orders]);
-  // Devis/brouillons non conclus : pas encore confirmés par le client, à part pour éviter
-  // toute suppression accidentelle et la perte des coordonnées clients associées.
-  const pendingDevisCount = useMemo(() => orders.filter(o => o.status === "Brouillon" || o.status === "Devis").length, [orders]);
+  const aPreparerCount = orders.filter(isAPreparer).length;
   // Commandes à livrer : mode livraison, prêtes/confirmées, pas encore livrées
-  const aLivrerCount = useMemo(() => orders.filter(o =>
+  const aLivrerCount = orders.filter(o =>
     o.deliveryMode === "livraison" &&
-    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status)
-  ).length, [orders]);
+    !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status)
+  ).length;
   // Commandes à retirer au local : mode retrait, prêtes/confirmées, pas encore récupérées
-  const aRetirerCount = useMemo(() => orders.filter(o =>
+  const aRetirerCount = orders.filter(o =>
     o.deliveryMode === "retrait" &&
-    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status)
-  ).length, [orders]);
+    !["Brouillon", "Devis", "Livrée", "En cours", "Retour", "Clôturée"].includes(o.status)
+  ).length;
 
   const navItems = [
     { id: "dashboard", label: "Tableau de bord", icon: "🏠" },
     { id: "orders", label: "Commandes", icon: "📋", badge: aPreparerCount },
-    { id: "devisEnAttente", label: "Devis en attente", icon: "📝", badge: pendingDevisCount },
     { id: "clients", label: "Clients", icon: "👥" },
     { id: "stock", label: "Stock", icon: "📦" },
     { id: "compta", label: "Comptabilité", icon: "💹" },
@@ -4903,7 +4090,6 @@ function AppInner() {
   }
 
   return (
-    <>
     <div style={{ display: "flex", height: "100%", overflow: "hidden", background: "#f4f5f7", fontFamily: "'Nunito', 'Segoe UI', sans-serif" }}>
       <div
         onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
@@ -4943,7 +4129,7 @@ function AppInner() {
           {view === "stock" && <StockView orders={orders} stock={stock} setStock={setStock} />}
           {view === "compta" && <ComptaView orders={orders} expenses={expenses} setExpenses={setExpenses} stock={stock} settings={settings} expenseCategories={expenseCategories} setExpenseCategories={setExpenseCategories} recurringExpenses={recurringExpenses} setRecurringExpenses={setRecurringExpenses} />}
           {view === "calendar" && <Card><CalendarView orders={orders} onOpenOrder={(o) => setViewOrder(o)} settings={settings} /></Card>}
-          {view === "delivery" && <DeliveryInterface orders={orders} stock={stock} settings={settings} onShare={sharePdf} onConfirmDelivery={confirmDelivery} onRetour={saveRetour} onEncaisser={(o) => { setSoldeOrder(o); setSoldeMoyenSel("especes"); }} onDeletePhoto={deleteOrderPhoto} />}
+          {view === "delivery" && <DeliveryInterface orders={orders} stock={stock} settings={settings} onShare={sharePdf} onMarkDelivered={(id) => updateStatus(id, "Livrée")} onRetour={saveRetour} onEncaisser={(o) => { setSoldeOrder(o); setSoldeMoyenSel("especes"); }} />}
           {view === "retours" && <RetoursView orders={orders} stock={stock} settings={settings} onRetour={saveRetour} />}
           {view === "settings" && <SettingsView settings={settings} setSettings={setSettings} driveToken={driveToken} setDriveToken={setDriveToken} driveClientId={driveClientId} setDriveClientId={setDriveClientId} orders={orders} setOrders={setOrders} clients={clients} setClients={setClients} stock={stock} expenses={expenses} pushTokens={pushTokens} setPushTokens={setPushTokens} userRoles={userRoles} setUserRoles={setUserRoles} myRole={myRole} />}
 
@@ -4951,17 +4137,12 @@ function AppInner() {
             <Card>
               <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800 }}>👥 Bibliothèque clients</h2>
               <div style={{ color: "#999", fontSize: 13, marginBottom: 20 }}>{clients.length} client(s) enregistré(s)</div>
-              <ClientLibrary clients={clients} setClients={setClients} embedded settings={settings} orders={orders} />
+              <ClientLibrary clients={clients} setClients={setClients} embedded settings={settings} />
             </Card>
           )}
 
-          {(view === "orders" || view === "devisEnAttente") && (
+          {view === "orders" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {view === "devisEnAttente" && (
-                <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#92400e" }}>
-                  📝 Devis et brouillons pas encore confirmés par le client — gardés à part pour ne jamais les supprimer par erreur ni perdre les coordonnées saisies (nom, téléphone, email...).
-                </div>
-              )}
               {quickFilter === "aPreparer" && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#f5f3ff", border: "1.5px solid #c4b5fd", borderRadius: 10, padding: "10px 14px" }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "#6d28d9" }}>🔄 Filtre actif : commandes à préparer (départ dans les 4 jours)</span>
@@ -4971,12 +4152,10 @@ function AppInner() {
               <Card>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ minWidth: 0 }}><Inp placeholder="🔍 Rechercher client ou N° devis..." value={searchQ} onChange={setSearchQ} /></div>
-                  {view === "orders" && (
-                    <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setQuickFilter(null); }} style={{ width: "100%", minWidth: 0, padding: "10px 12px", borderRadius: 10, border: filterStatus !== "Toutes" ? "2px solid #1a1a2e" : "1.5px solid #e5e7eb", background: "#fff", color: "#1a1a2e", fontWeight: 700, fontSize: 16, fontFamily: "inherit", cursor: "pointer", boxSizing: "border-box" }}>
-                      <option value="Toutes">Toutes les commandes (hors devis/brouillons)</option>
-                      {STATUS_FLOW.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  )}
+                  <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setQuickFilter(null); }} style={{ width: "100%", minWidth: 0, padding: "10px 12px", borderRadius: 10, border: filterStatus !== "Toutes" ? "2px solid #1a1a2e" : "1.5px solid #e5e7eb", background: "#fff", color: "#1a1a2e", fontWeight: 700, fontSize: 16, fontFamily: "inherit", cursor: "pointer", boxSizing: "border-box" }}>
+                    <option value="Toutes">Toutes les commandes</option>
+                    {STATUS_FLOW.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
               </Card>
 
@@ -5017,8 +4196,6 @@ function AppInner() {
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
                         <div style={{ fontSize: 20, fontWeight: 900 }}>{total.toFixed(2)} €</div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: reste > 0 ? "#f59e0b" : "#10b981" }}>{reste > 0 ? `Reste : ${reste.toFixed(2)} €` : "✓ Soldé"}</div>
-                        {parseFloat(order.acompte||0) > 0 && order.acompteMoyen && <div style={{ fontSize: 10, color: "#065f46", marginTop: 2 }}>Acompte {{ paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" }[order.acompteMoyen]}</div>}
-                        {order.cautionMoyen && <div style={{ fontSize: 10, color: "#6d28d9", marginTop: 1 }}>Caution {{ paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" }[order.cautionMoyen]}</div>}
                       </div>
                     </div>
                     {isExp && (<>
@@ -5098,18 +4275,20 @@ function AppInner() {
       </Modal>
 
       <Modal open={!!viewOrder} onClose={() => setViewOrder(null)} title="Fiche commande" wide>
-        {viewOrder && <DeliverySheet order={viewOrder} settings={settings} onShare={sharePdf} stock={stock} onEncaisser={(o) => { setSoldeOrder(o); setSoldeMoyenSel("especes"); }} onDeletePhoto={deleteOrderPhoto} allOrders={orders} />}
+        {viewOrder && <DeliverySheet order={viewOrder} settings={settings} onShare={sharePdf} stock={stock} onEncaisser={(o) => { setSoldeOrder(o); setSoldeMoyenSel("especes"); }} />}
+      </Modal>
+
+      <Modal open={!!shareModal} onClose={() => setShareModal(null)} title="📤 Partager le devis">
+        {shareModal && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 14, color: "#065f46", fontSize: 14 }}>✅ Le PDF <strong>{shareModal.id}.pdf</strong> a été téléchargé.</div>
+            <p style={{ margin: 0, color: "#666", fontSize: 14 }}>Envoyez-le au client via :</p>
+            {shareModal.clientPhone && <a href={`https://wa.me/${shareModal.clientPhone.replace(/\s/g,"").replace(/^0/, "33")}?text=${encodeURIComponent(`Bonjour ${shareModal.clientName}, voici votre devis ${shareModal.id} de ${settings.companyName}.`)}`} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#d1fae5", borderRadius: 12, textDecoration: "none", color: "#065f46", fontWeight: 700 }}><span style={{ fontSize: 24 }}>💬</span> WhatsApp (joindre le PDF téléchargé)</a>}
+            {shareModal.clientEmail && <a href={`mailto:${shareModal.clientEmail}?subject=${encodeURIComponent(`Devis ${shareModal.id} — ${settings.companyName}`)}&body=${encodeURIComponent(`Bonjour ${shareModal.clientName},\n\nVeuillez trouver ci-joint votre devis ${shareModal.id}.\n\nCordialement,\n${settings.companyName}`)}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#dbeafe", borderRadius: 12, textDecoration: "none", color: "#1e40af", fontWeight: 700 }}><span style={{ fontSize: 24 }}>✉️</span> Email (joindre le PDF téléchargé)</a>}
+            <div style={{ fontSize: 12, color: "#999", lineHeight: 1.5 }}>💡 Sur mobile, le bouton "Partager" ouvre directement le menu de partage natif avec le PDF en pièce jointe.</div>
+          </div>
+        )}
       </Modal>
     </div>
-    {ConfirmUI}
-    </>
-  );
-}
-
-export default function App() {
-  return (
-    <ErrorBoundary>
-      <AppInner />
-    </ErrorBoundary>
   );
 }

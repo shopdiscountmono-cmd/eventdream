@@ -610,65 +610,175 @@ exports.dailyBackup = onSchedule(
 
 // Sauvegarde manuelle déclenchée depuis l'app (bouton "Sauvegarder maintenant").
 exports.triggerBackup = onCall({ region: REGION }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Connexion requise.");
+  }
+
   const email = (request.auth.token.email || "").toLowerCase();
+
   const rolesSnap = await db.collection("app").doc("userRoles").get();
   const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
-  if (roles[email] === "livreur") throw new HttpsError("permission-denied", "Réservé aux admins.");
+
+  if (roles[email] === "livreur") {
+    throw new HttpsError("permission-denied", "Réservé aux admins.");
+  }
 
   const now = new Date();
-  const backupId = `${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}_manual`;
-  const backup = { createdAt: now.toISOString(), manual: true, collections: {} };
-  for (const col of BACKUP_COLLECTIONS) {
+
+  const backupId =
+    `${now.toISOString().slice(0, 10)}_` +
+    `${now.toISOString().slice(11, 19).replace(/:/g, "-")}_manual`;
+
+  const backup = {
+    createdAt: now.toISOString(),
+    manual: true,
+    collections: {},
+  };
+
+  // Sauvegarde des commandes depuis la nouvelle collection
+  const ordersSnap = await db.collection("orders").get();
+
+  backup.collections.orders = ordersSnap.docs.map(doc => ({
+    ...doc.data(),
+    id: doc.id,
+  }));
+
+  // Sauvegarde des autres données inchangées
+  for (const col of ["clients", "stock", "expenses", "settings"]) {
     const snap = await db.collection("app").doc(col).get();
     backup.collections[col] = snap.exists ? snap.data() : null;
   }
-  backup.orderCount = Array.isArray(backup.collections.orders?.value) ? backup.collections.orders.value.length : 0;
-  backup.clientCount = Array.isArray(backup.collections.clients?.value) ? backup.collections.clients.value.length : 0;
+
+  backup.orderCount = backup.collections.orders.length;
+
+  backup.clientCount = Array.isArray(
+    backup.collections.clients?.value
+  )
+    ? backup.collections.clients.value.length
+    : 0;
+
   await db.collection("backups").doc(backupId).set(backup);
-  logger.info(`✅ Sauvegarde manuelle ${backupId} : ${backup.orderCount} commandes.`);
-  return { backupId, orderCount: backup.orderCount, clientCount: backup.clientCount, createdAt: backup.createdAt };
+
+  logger.info(
+    `✅ Sauvegarde manuelle ${backupId} : ${backup.orderCount} commandes.`
+  );
+
+  return {
+    backupId,
+    orderCount: backup.orderCount,
+    clientCount: backup.clientCount,
+    createdAt: backup.createdAt,
+  };
 });
 
 // Restauration d'une sauvegarde (depuis l'app, bouton "Restaurer").
 // Écrit d'abord une sauvegarde de sécurité de l'état actuel, puis restaure.
-exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
-  const email = (request.auth.token.email || "").toLowerCase();
-  const rolesSnap = await db.collection("app").doc("userRoles").get();
-  const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
-  if (roles[email] === "livreur") throw new HttpsError("permission-denied", "Réservé aux admins.");
+exports.restoreBackup = onCall(
+  { region: REGION, timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Connexion requise.");
+    }
 
-  const { backupId } = request.data || {};
-  if (!backupId) throw new HttpsError("invalid-argument", "ID de sauvegarde requis.");
+    const email = (request.auth.token.email || "").toLowerCase();
 
-  const backupSnap = await db.collection("backups").doc(backupId).get();
-  if (!backupSnap.exists) throw new HttpsError("not-found", "Sauvegarde introuvable.");
-  const backup = backupSnap.data();
+    const rolesSnap = await db.collection("app").doc("userRoles").get();
+    const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
 
-  // Sauvegarde de sécurité de l'état actuel avant restauration
-  const now = new Date();
-  const safetyId = `${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}_pre-restore`;
-  const safety = { createdAt: now.toISOString(), preRestore: true, collections: {} };
-  for (const col of BACKUP_COLLECTIONS) {
-    const snap = await db.collection("app").doc(col).get();
-    safety.collections[col] = snap.exists ? snap.data() : null;
+    if (roles[email] === "livreur") {
+      throw new HttpsError("permission-denied", "Réservé aux admins.");
+    }
+
+    const { backupId } = request.data || {};
+
+    if (!backupId) {
+      throw new HttpsError("invalid-argument", "ID de sauvegarde requis.");
+    }
+
+    const backupSnap = await db.collection("backups").doc(backupId).get();
+
+    if (!backupSnap.exists) {
+      throw new HttpsError("not-found", "Sauvegarde introuvable.");
+    }
+
+    const backup = backupSnap.data();
+
+    // Sauvegarde de sécurité avant restauration
+    const now = new Date();
+
+    const safetyId =
+      `${now.toISOString().slice(0, 10)}_` +
+      `${now.toISOString().slice(11, 19).replace(/:/g, "-")}_pre-restore`;
+
+    const safety = {
+      createdAt: now.toISOString(),
+      preRestore: true,
+      collections: {},
+    };
+
+    const currentOrdersSnap = await db.collection("orders").get();
+
+    safety.collections.orders = currentOrdersSnap.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id,
+    }));
+
+    for (const col of ["clients", "stock", "expenses", "settings"]) {
+      const snap = await db.collection("app").doc(col).get();
+      safety.collections[col] = snap.exists ? snap.data() : null;
+    }
+
+    await db.collection("backups").doc(safetyId).set(safety);
+
+    // Restauration
+    const cols = backup.collections || {};
+
+    if (Array.isArray(cols.orders)) {
+      const existingOrders = await db.collection("orders").get();
+
+      const batch = db.batch();
+
+      existingOrders.docs.forEach(docSnap => {
+        batch.delete(docSnap.ref);
+      });
+
+      cols.orders.forEach(order => {
+        if (!order?.id) return;
+
+        batch.set(
+          db.collection("orders").doc(order.id),
+          order
+        );
+      });
+
+      await batch.commit();
+    }
+
+    for (const col of ["clients", "stock", "expenses", "settings"]) {
+      if (cols[col]) {
+        await db.collection("app").doc(col).set(cols[col]);
+      }
+    }
+
+    const orderCount = Array.isArray(cols.orders)
+      ? cols.orders.length
+      : 0;
+
+    await db.collection("app").doc("sheetSyncGuard").set({
+      value: { orders: orderCount }
+    });
+
+    logger.info(
+      `✅ Restauration ${backupId} effectuée (${orderCount} commandes). Sauvegarde sécurité : ${safetyId}.`
+    );
+
+    return {
+      success: true,
+      orderCount,
+      safetyBackupId: safetyId
+    };
   }
-  await db.collection("backups").doc(safetyId).set(safety);
-
-  // Restauration de chaque collection
-  const cols = backup.collections || {};
-  for (const col of BACKUP_COLLECTIONS) {
-    if (cols[col]) await db.collection("app").doc(col).set(cols[col]);
-  }
-
-  // Réinitialisation du garde-fou Sheet
-  const orderCount = Array.isArray(cols.orders?.value) ? cols.orders.value.length : 0;
-  await db.collection("app").doc("sheetSyncGuard").set({ value: { orders: orderCount } });
-
-  logger.info(`✅ Restauration ${backupId} effectuée (${orderCount} commandes). Sauvegarde de sécurité : ${safetyId}.`);
-  return { success: true, orderCount, safetyBackupId: safetyId };
-});
+);
 
 // ───────────────────────────────────────────────────────────
 // 9) Recherche de clients potentiellement en doublon

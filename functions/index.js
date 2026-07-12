@@ -496,44 +496,70 @@ exports.cleanupOldPhotos = onSchedule(
   { schedule: "every 24 hours", region: SCHEDULER_REGION, timeZone: "Europe/Paris" },
   async () => {
     const [ordersSnap, settingsSnap] = await Promise.all([
-      db.collection("app").doc("orders").get(),
+      db.collection("orders").get(),
       db.collection("app").doc("settings").get(),
     ]);
-    const orders = ordersSnap.exists ? ordersSnap.data().value : [];
+
+    const orders = ordersSnap.docs.map(doc => ({
+      ...doc.data(),
+      id: doc.id,
+    }));
+
     const settings = settingsSnap.exists ? settingsSnap.data().value : {};
     const retentionDays = Number(settings.photoRetentionDays);
-    if (!Array.isArray(orders) || !orders.length || !retentionDays || retentionDays <= 0) return; // 0 = désactivé
+
+    if (!orders.length || !retentionDays || retentionDays <= 0) return;
 
     const now = Date.now();
     const bucket = getStorage().bucket();
-    let changed = false;
+
     let deletedCount = 0;
 
-    const updatedOrders = await Promise.all(orders.map(async (o) => {
-      if (o.status !== "Clôturée" || !o.closedAt) return o;
-      const ageDays = (now - new Date(o.closedAt).getTime()) / 86400000;
-      if (ageDays < retentionDays) return o;
-      const hasDeliveryPhotos = Array.isArray(o.deliveryPhotos) && o.deliveryPhotos.length > 0;
-      const hasReturnPhotos = Array.isArray(o.returnPhotos) && o.returnPhotos.length > 0;
-      if (!hasDeliveryPhotos && !hasReturnPhotos) return o;
+    for (const o of orders) {
+      if (o.status !== "Clôturée" || !o.closedAt) continue;
 
-      const allUrls = [...(o.deliveryPhotos || []), ...(o.returnPhotos || [])];
+      const ageDays = (now - new Date(o.closedAt).getTime()) / 86400000;
+      if (ageDays < retentionDays) continue;
+
+      const hasDeliveryPhotos =
+        Array.isArray(o.deliveryPhotos) && o.deliveryPhotos.length > 0;
+
+      const hasReturnPhotos =
+        Array.isArray(o.returnPhotos) && o.returnPhotos.length > 0;
+
+      if (!hasDeliveryPhotos && !hasReturnPhotos) continue;
+
+      const allUrls = [
+        ...(o.deliveryPhotos || []),
+        ...(o.returnPhotos || []),
+      ];
+
       for (const url of allUrls) {
         try {
-          const path = decodeURIComponent(new URL(url).pathname.split("/o/")[1].split("?")[0]);
+          const path = decodeURIComponent(
+            new URL(url).pathname.split("/o/")[1].split("?")[0]
+          );
+
           await bucket.file(path).delete();
           deletedCount++;
         } catch (e) {
-          logger.warn(`Photo déjà absente ou erreur suppression (${o.id}) :`, e.message);
+          logger.warn(
+            `Photo déjà absente ou erreur suppression (${o.id}) :`,
+            e.message
+          );
         }
       }
-      changed = true;
-      return { ...o, deliveryPhotos: [], returnPhotos: [] };
-    }));
 
-    if (changed) {
-      await db.collection("app").doc("orders").set({ value: updatedOrders });
-      logger.info(`Nettoyage photos : ${deletedCount} photo(s) supprimée(s) (rétention ${retentionDays} jours).`);
+      await db.collection("orders").doc(o.id).update({
+        deliveryPhotos: [],
+        returnPhotos: [],
+      });
+    }
+
+    if (deletedCount > 0) {
+      logger.info(
+        `Nettoyage photos : ${deletedCount} photo(s) supprimée(s) (rétention ${retentionDays} jours).`
+      );
     }
   }
 );

@@ -122,52 +122,59 @@ function fmtDateFr(iso) {
 // 1) Notification à la validation d'une commande (Devis → Confirmée)
 // ───────────────────────────────────────────────────────────
 exports.onOrderValidated = onDocumentWritten(
-  { document: "app/orders", region: REGION },
+  { document: "orders/{orderId}", region: REGION },
   async (event) => {
-    const before = event.data.before.exists ? event.data.before.data().value : [];
-    const after = event.data.after.exists ? event.data.after.data().value : [];
-    if (!Array.isArray(after)) return;
+    const before = event.data.before.exists
+      ? event.data.before.data()
+      : null;
 
-    // Vérifie le réglage global avant de faire quoi que ce soit
+    const after = event.data.after.exists
+      ? event.data.after.data()
+      : null;
+
+    if (!after) return;
+
     const settingsSnap = await db.collection("app").doc("settings").get();
     const settings = settingsSnap.exists ? settingsSnap.data().value : {};
+
     if (settings && settings.notifyOnValidation === false) return;
 
-    const beforeById = new Map((Array.isArray(before) ? before : []).map(o => [o.id, o]));
+    const newlyValidated =
+      after.status === "Confirmée" &&
+      (!before || before.status !== "Confirmée");
 
-    const newlyValidated = after.filter(o => {
-      if (o.status !== "Confirmée") return false;
-      const prev = beforeById.get(o.id);
-      return !prev || prev.status !== "Confirmée";
-    });
-    if (!newlyValidated.length) return;
+    if (!newlyValidated) return;
 
-    // Protection anti-doublon : Eventarc peut parfois livrer le même évènement deux fois.
-    // On mémorise les commandes déjà notifiées pour ignorer une éventuelle 2e livraison.
     const notifiedRef = db.collection("app").doc("notifiedAlerts");
     const notifiedSnap = await notifiedRef.get();
-    const notified = notifiedSnap.exists ? (notifiedSnap.data().value || {}) : {};
-    const newKeys = {};
 
-    for (const order of newlyValidated) {
-      const alertKey = `${order.id}:validation`;
-      if (notified[alertKey]) continue;
-      const when = order.deliveryDate ? ` — ${fmtDateFr(order.deliveryDate)}` : "";
-      await sendToAll(
-        "✅ Commande validée",
-        `${order.clientName || "Client"}${when}`,
-        { orderId: order.id, kind: "validation" },
-        { excludeRoles: ["livreur"] }
-      );
-      newKeys[alertKey] = true;
-    }
+    const notified = notifiedSnap.exists
+      ? (notifiedSnap.data().value || {})
+      : {};
 
-    if (Object.keys(newKeys).length) {
-      await notifiedRef.set({ value: { ...notified, ...newKeys } });
-    }
+    const alertKey = `${after.id}:validation`;
+
+    if (notified[alertKey]) return;
+
+    const when = after.deliveryDate
+      ? ` — ${fmtDateFr(after.deliveryDate)}`
+      : "";
+
+    await sendToAll(
+      "✅ Commande validée",
+      `${after.clientName || "Client"}${when}`,
+      { orderId: after.id, kind: "validation" },
+      { excludeRoles: ["livreur"] }
+    );
+
+    await notifiedRef.set({
+      value: {
+        ...notified,
+        [alertKey]: true
+      }
+    });
   }
 );
-
 // ───────────────────────────────────────────────────────────
 // 2) Vérification planifiée : livraison / retrait / retour qui approchent
 //    Tourne toutes les 15 minutes.

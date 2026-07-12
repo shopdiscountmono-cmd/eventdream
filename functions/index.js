@@ -331,8 +331,12 @@ async function guardAgainstMassDeletion(kind, newCount) {
 async function syncOrdersToSheet() {
   const sheetId = await getSheetId();
   if (!sheetId) return;
-  const snap = await db.collection("app").doc("orders").get();
-  const orders = snap.exists ? snap.data().value : [];
+  const snap = await db.collection("orders").get();
+
+const orders = snap.docs.map(doc => ({
+  ...doc.data(),
+  id: doc.id
+}));
   if (!Array.isArray(orders)) return;
   if (await guardAgainstMassDeletion("orders", orders.length)) return;
 
@@ -376,7 +380,7 @@ async function syncExpensesToSheet() {
 }
 
 exports.syncOrdersSheet = onDocumentWritten(
-  { document: "app/orders", region: REGION, serviceAccount: SHEETS_SERVICE_ACCOUNT },
+  { document: "orders/{orderId}", region: REGION, serviceAccount: SHEETS_SERVICE_ACCOUNT },
   async () => { await syncOrdersToSheet(); }
 );
 

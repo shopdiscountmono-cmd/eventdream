@@ -1,2 +1,4 @@
+client_secret*.json
+serviceAccountKey*.json
 node_modules/
 *.localserviceAccountKey.json

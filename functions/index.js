@@ -23,7 +23,41 @@ const SCHEDULER_REGION = "europe-west1";
 const SHEETS_SERVICE_ACCOUNT = "eventdream-app@appspot.gserviceaccount.com";
 
 // Statuts de commande considérés "actifs" (alignés sur la logique du tableau de bord App.jsx)
-const ACTIVE_STATUSES = ["Confirmée", "Préparée", "En livraison", "Livrée", "En cours"];
+const ACTIVE_STATUSES = ["Confirmée", "Préparée", "Chez le client"];
+
+// ─── Helpers nouvelle architecture orders (collection individuelle) ───────────
+// Lit toutes les commandes depuis la collection "orders" (nouveaux documents individuels).
+// Fallback vers l'ancienne structure app/orders si la nouvelle est vide (pendant la migration).
+async function getAllOrders() {
+  const snap = await db.collection("orders").get();
+  if (!snap.empty) {
+    return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+  }
+  // Fallback : ancienne structure
+  const old = await db.collection("app").doc("orders").get();
+  return old.exists ? (old.data().value || []) : [];
+}
+
+// Écrit un tableau de commandes dans la nouvelle collection (par batch).
+async function writeAllOrders(orders) {
+  const BATCH_SIZE = 400;
+  for (let i = 0; i < orders.length; i += BATCH_SIZE) {
+    const batch = db.batch();
+    orders.slice(i, i + BATCH_SIZE).forEach(o => {
+      if (!o.id) return;
+      batch.set(db.collection("orders").doc(o.id), o);
+    });
+    await batch.commit();
+  }
+}
+
+// Met à jour une seule commande dans la nouvelle collection.
+async function writeOrder(order) {
+  if (!order.id) throw new Error("writeOrder: order.id manquant");
+  await db.collection("orders").doc(order.id).set(order);
+}
+
+
 
 // ───────────────────────────────────────────────────────────
 // Helpers
@@ -119,62 +153,42 @@ function fmtDateFr(iso) {
 }
 
 // ───────────────────────────────────────────────────────────
-// 1) Notification à la validation d'une commande (Devis → Confirmée)
+// 1) Notification à la validation d'une commande (→ Confirmée)
+//    Écoute chaque document individuel de la collection "orders"
 // ───────────────────────────────────────────────────────────
 exports.onOrderValidated = onDocumentWritten(
   { document: "orders/{orderId}", region: REGION },
   async (event) => {
-    const before = event.data.before.exists
-      ? event.data.before.data()
-      : null;
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after || after.status !== "Confirmée") return;
+    if (before && before.status === "Confirmée") return; // déjà notifié
 
-    const after = event.data.after.exists
-      ? event.data.after.data()
-      : null;
-
-    if (!after) return;
-
+    // Vérifie le réglage global
     const settingsSnap = await db.collection("app").doc("settings").get();
     const settings = settingsSnap.exists ? settingsSnap.data().value : {};
-
     if (settings && settings.notifyOnValidation === false) return;
 
-    const newlyValidated =
-      after.status === "Confirmée" &&
-      (!before || before.status !== "Confirmée");
+    const order = after;
+    const alertKey = `${order.id}:validation`;
 
-    if (!newlyValidated) return;
-
+    // Anti-doublon
     const notifiedRef = db.collection("app").doc("notifiedAlerts");
     const notifiedSnap = await notifiedRef.get();
-
-    const notified = notifiedSnap.exists
-      ? (notifiedSnap.data().value || {})
-      : {};
-
-    const alertKey = `${after.id}:validation`;
-
+    const notified = notifiedSnap.exists ? (notifiedSnap.data().value || {}) : {};
     if (notified[alertKey]) return;
 
-    const when = after.deliveryDate
-      ? ` — ${fmtDateFr(after.deliveryDate)}`
-      : "";
-
+    const when = order.deliveryDate ? ` — ${fmtDateFr(order.deliveryDate)}` : "";
     await sendToAll(
       "✅ Commande validée",
-      `${after.clientName || "Client"}${when}`,
-      { orderId: after.id, kind: "validation" },
+      `${order.clientName || "Client"}${when}`,
+      { orderId: order.id, kind: "validation" },
       { excludeRoles: ["livreur"] }
     );
-
-    await notifiedRef.set({
-      value: {
-        ...notified,
-        [alertKey]: true
-      }
-    });
+    await notifiedRef.set({ value: { ...notified, [alertKey]: true } });
   }
 );
+
 // ───────────────────────────────────────────────────────────
 // 2) Vérification planifiée : livraison / retrait / retour qui approchent
 //    Tourne toutes les 15 minutes.
@@ -182,16 +196,12 @@ exports.onOrderValidated = onDocumentWritten(
 exports.checkUpcomingDates = onSchedule(
   { schedule: "every 15 minutes", region: SCHEDULER_REGION, timeZone: "Europe/Paris" },
   async () => {
-    const [ordersSnap, settingsSnap, notifiedSnap] = await Promise.all([
-  db.collection("orders").get(),
-  db.collection("app").doc("settings").get(),
-  db.collection("app").doc("notifiedAlerts").get(),
-]);
+    const [orders, settingsSnap, notifiedSnap] = await Promise.all([
+      getAllOrders(),
+      db.collection("app").doc("settings").get(),
+      db.collection("app").doc("notifiedAlerts").get(),
+    ]);
 
-const orders = ordersSnap.docs.map(doc => ({
-  ...doc.data(),
-  id: doc.id
-}));
     const settings = settingsSnap.exists ? settingsSnap.data().value : {};
     const notified = notifiedSnap.exists ? (notifiedSnap.data().value || {}) : {};
     if (!Array.isArray(orders) || !orders.length) return;
@@ -341,13 +351,7 @@ async function guardAgainstMassDeletion(kind, newCount) {
 async function syncOrdersToSheet() {
   const sheetId = await getSheetId();
   if (!sheetId) return;
-  const snap = await db.collection("orders").get();
-
-const orders = snap.docs.map(doc => ({
-  ...doc.data(),
-  id: doc.id
-}));
-  if (!Array.isArray(orders)) return;
+  const orders = await getAllOrders();
   if (await guardAgainstMassDeletion("orders", orders.length)) return;
 
   const rows = [[
@@ -495,71 +499,42 @@ exports.unsubscribe = onRequest({ region: REGION }, async (req, res) => {
 exports.cleanupOldPhotos = onSchedule(
   { schedule: "every 24 hours", region: SCHEDULER_REGION, timeZone: "Europe/Paris" },
   async () => {
-    const [ordersSnap, settingsSnap] = await Promise.all([
-      db.collection("orders").get(),
+    const [orders, settingsSnap] = await Promise.all([
+      getAllOrders(),
       db.collection("app").doc("settings").get(),
     ]);
-
-    const orders = ordersSnap.docs.map(doc => ({
-      ...doc.data(),
-      id: doc.id,
-    }));
-
     const settings = settingsSnap.exists ? settingsSnap.data().value : {};
     const retentionDays = Number(settings.photoRetentionDays);
-
     if (!orders.length || !retentionDays || retentionDays <= 0) return;
 
     const now = Date.now();
     const bucket = getStorage().bucket();
-
     let deletedCount = 0;
 
-    for (const o of orders) {
-      if (o.status !== "Clôturée" || !o.closedAt) continue;
-
+    await Promise.all(orders.map(async (o) => {
+      if (o.status !== "Clôturée" || !o.closedAt) return;
       const ageDays = (now - new Date(o.closedAt).getTime()) / 86400000;
-      if (ageDays < retentionDays) continue;
+      if (ageDays < retentionDays) return;
+      const hasDeliveryPhotos = Array.isArray(o.deliveryPhotos) && o.deliveryPhotos.length > 0;
+      const hasReturnPhotos = Array.isArray(o.returnPhotos) && o.returnPhotos.length > 0;
+      if (!hasDeliveryPhotos && !hasReturnPhotos) return;
 
-      const hasDeliveryPhotos =
-        Array.isArray(o.deliveryPhotos) && o.deliveryPhotos.length > 0;
-
-      const hasReturnPhotos =
-        Array.isArray(o.returnPhotos) && o.returnPhotos.length > 0;
-
-      if (!hasDeliveryPhotos && !hasReturnPhotos) continue;
-
-      const allUrls = [
-        ...(o.deliveryPhotos || []),
-        ...(o.returnPhotos || []),
-      ];
-
+      const allUrls = [...(o.deliveryPhotos || []), ...(o.returnPhotos || [])];
       for (const url of allUrls) {
         try {
-          const path = decodeURIComponent(
-            new URL(url).pathname.split("/o/")[1].split("?")[0]
-          );
-
+          const path = decodeURIComponent(new URL(url).pathname.split("/o/")[1].split("?")[0]);
           await bucket.file(path).delete();
           deletedCount++;
         } catch (e) {
-          logger.warn(
-            `Photo déjà absente ou erreur suppression (${o.id}) :`,
-            e.message
-          );
+          logger.warn(`Photo déjà absente ou erreur suppression (${o.id}) :`, e.message);
         }
       }
-
-      await db.collection("orders").doc(o.id).update({
-        deliveryPhotos: [],
-        returnPhotos: [],
-      });
-    }
+      // Mise à jour du document individuel
+      await writeOrder({ ...o, deliveryPhotos: [], returnPhotos: [] });
+    }));
 
     if (deletedCount > 0) {
-      logger.info(
-        `Nettoyage photos : ${deletedCount} photo(s) supprimée(s) (rétention ${retentionDays} jours).`
-      );
+      logger.info(`Nettoyage photos : ${deletedCount} photo(s) supprimée(s) (rétention ${retentionDays} jours).`);
     }
   }
 );
@@ -570,215 +545,124 @@ exports.cleanupOldPhotos = onSchedule(
 //    Conservation des 7 derniers jours (les plus anciennes sont supprimées).
 //    En cas d'échec, une notification push est envoyée à l'équipe.
 // ───────────────────────────────────────────────────────────
-const BACKUP_COLLECTIONS = ["orders", "clients", "stock", "expenses", "settings"];
+const APP_COLLECTIONS = ["clients", "stock", "expenses", "settings"]; // hors orders (nouvelle collection)
 const BACKUP_RETENTION_DAYS = 7;
+
+// Helpers sauvegarde : lit/écrit les orders depuis/vers la nouvelle collection
+async function backupOrders() {
+  const orders = await getAllOrders();
+  return { value: orders }; // format compatible avec l'ancien backup
+}
+
+async function restoreOrdersFromBackup(data) {
+  const orders = Array.isArray(data?.value) ? data.value : [];
+  if (orders.length === 0) return;
+  // Vider l'ancienne collection et réécrire
+  const existing = await db.collection("orders").get();
+  const delBatch = db.batch();
+  existing.docs.forEach(d => delBatch.delete(d.ref));
+  await delBatch.commit();
+  await writeAllOrders(orders);
+}
 
 exports.dailyBackup = onSchedule(
   { schedule: "0 2 * * *", region: SCHEDULER_REGION, timeZone: "Europe/Paris" },
   async () => {
     try {
       const now = new Date();
-      const dateKey = now.toISOString().slice(0, 10); // YYYY-MM-DD
+      const dateKey = now.toISOString().slice(0, 10);
       const backupId = `${dateKey}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}`;
 
-      // Lecture de toutes les collections à sauvegarder
       const backup = { createdAt: now.toISOString(), collections: {} };
-      for (const col of BACKUP_COLLECTIONS) {
+      // Sauvegarde orders depuis la nouvelle collection
+      backup.collections.orders = await backupOrders();
+      backup.orderCount = backup.collections.orders.value.length;
+      // Autres collections depuis app/
+      for (const col of APP_COLLECTIONS) {
         const snap = await db.collection("app").doc(col).get();
         backup.collections[col] = snap.exists ? snap.data() : null;
       }
-      backup.orderCount = Array.isArray(backup.collections.orders?.value) ? backup.collections.orders.value.length : 0;
-      backup.clientCount = Array.isArray(backup.collections.clients?.value) ? backup.collections.clients.value.length : 0;
+      const clientsSnap = await db.collection("app").doc("clients").get();
+      backup.clientCount = Array.isArray(clientsSnap.exists ? clientsSnap.data().value : []) ?
+        (clientsSnap.data()?.value?.length || 0) : 0;
 
-      // Écriture de la sauvegarde
       await db.collection("backups").doc(backupId).set(backup);
       logger.info(`✅ Sauvegarde ${backupId} : ${backup.orderCount} commandes, ${backup.clientCount} clients.`);
 
-      // Suppression des sauvegardes plus anciennes que BACKUP_RETENTION_DAYS
       const cutoff = new Date(now.getTime() - BACKUP_RETENTION_DAYS * 86400000).toISOString().slice(0, 10);
       const oldSnaps = await db.collection("backups").where("createdAt", "<", cutoff + "T00:00:00.000Z").get();
-      const deletions = oldSnaps.docs.map(d => d.ref.delete());
-      await Promise.all(deletions);
-      if (deletions.length > 0) logger.info(`🗑️ ${deletions.length} ancienne(s) sauvegarde(s) supprimée(s).`);
+      await Promise.all(oldSnaps.docs.map(d => d.ref.delete()));
+      if (oldSnaps.docs.length > 0) logger.info(`🗑️ ${oldSnaps.docs.length} ancienne(s) sauvegarde(s) supprimée(s).`);
 
     } catch (err) {
       logger.error("❌ Échec de la sauvegarde automatique :", err.message);
-      await sendToAll("❌ Sauvegarde EventDream échouée", "La sauvegarde automatique a échoué. Vérifiez les logs Firebase.", { kind: "alerte" }, { excludeRoles: ["livreur"] });
+      await sendToAll("❌ Sauvegarde EventDream échouée", "La sauvegarde automatique a échoué.", { kind: "alerte" }, { excludeRoles: ["livreur"] });
     }
   }
 );
 
-// Sauvegarde manuelle déclenchée depuis l'app (bouton "Sauvegarder maintenant").
 exports.triggerBackup = onCall({ region: REGION }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Connexion requise.");
-  }
-
+  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
   const email = (request.auth.token.email || "").toLowerCase();
-
   const rolesSnap = await db.collection("app").doc("userRoles").get();
   const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
-
-  if (roles[email] === "livreur") {
-    throw new HttpsError("permission-denied", "Réservé aux admins.");
-  }
+  if (roles[email] === "livreur") throw new HttpsError("permission-denied", "Réservé aux admins.");
 
   const now = new Date();
-
-  const backupId =
-    `${now.toISOString().slice(0, 10)}_` +
-    `${now.toISOString().slice(11, 19).replace(/:/g, "-")}_manual`;
-
-  const backup = {
-    createdAt: now.toISOString(),
-    manual: true,
-    collections: {},
-  };
-
-  // Sauvegarde des commandes depuis la nouvelle collection
-  const ordersSnap = await db.collection("orders").get();
-
-  backup.collections.orders = ordersSnap.docs.map(doc => ({
-    ...doc.data(),
-    id: doc.id,
-  }));
-
-  // Sauvegarde des autres données inchangées
-  for (const col of ["clients", "stock", "expenses", "settings"]) {
+  const backupId = `${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}_manual`;
+  const backup = { createdAt: now.toISOString(), manual: true, collections: {} };
+  backup.collections.orders = await backupOrders();
+  backup.orderCount = backup.collections.orders.value.length;
+  for (const col of APP_COLLECTIONS) {
     const snap = await db.collection("app").doc(col).get();
     backup.collections[col] = snap.exists ? snap.data() : null;
   }
-
-  backup.orderCount = backup.collections.orders.length;
-
-  backup.clientCount = Array.isArray(
-    backup.collections.clients?.value
-  )
-    ? backup.collections.clients.value.length
-    : 0;
-
+  const clientsSnap = await db.collection("app").doc("clients").get();
+  backup.clientCount = clientsSnap.exists ? (clientsSnap.data()?.value?.length || 0) : 0;
   await db.collection("backups").doc(backupId).set(backup);
-
-  logger.info(
-    `✅ Sauvegarde manuelle ${backupId} : ${backup.orderCount} commandes.`
-  );
-
-  return {
-    backupId,
-    orderCount: backup.orderCount,
-    clientCount: backup.clientCount,
-    createdAt: backup.createdAt,
-  };
+  logger.info(`✅ Sauvegarde manuelle ${backupId} : ${backup.orderCount} commandes.`);
+  return { backupId, orderCount: backup.orderCount, clientCount: backup.clientCount, createdAt: backup.createdAt };
 });
 
-// Restauration d'une sauvegarde (depuis l'app, bouton "Restaurer").
-// Écrit d'abord une sauvegarde de sécurité de l'état actuel, puis restaure.
-exports.restoreBackup = onCall(
-  { region: REGION, timeoutSeconds: 120 },
-  async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Connexion requise.");
-    }
+exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
+  const email = (request.auth.token.email || "").toLowerCase();
+  const rolesSnap = await db.collection("app").doc("userRoles").get();
+  const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
+  if (roles[email] === "livreur") throw new HttpsError("permission-denied", "Réservé aux admins.");
 
-    const email = (request.auth.token.email || "").toLowerCase();
+  const { backupId } = request.data || {};
+  if (!backupId) throw new HttpsError("invalid-argument", "ID de sauvegarde requis.");
 
-    const rolesSnap = await db.collection("app").doc("userRoles").get();
-    const roles = rolesSnap.exists ? (rolesSnap.data().value || {}) : {};
+  const backupSnap = await db.collection("backups").doc(backupId).get();
+  if (!backupSnap.exists) throw new HttpsError("not-found", "Sauvegarde introuvable.");
+  const backup = backupSnap.data();
 
-    if (roles[email] === "livreur") {
-      throw new HttpsError("permission-denied", "Réservé aux admins.");
-    }
-
-    const { backupId } = request.data || {};
-
-    if (!backupId) {
-      throw new HttpsError("invalid-argument", "ID de sauvegarde requis.");
-    }
-
-    const backupSnap = await db.collection("backups").doc(backupId).get();
-
-    if (!backupSnap.exists) {
-      throw new HttpsError("not-found", "Sauvegarde introuvable.");
-    }
-
-    const backup = backupSnap.data();
-
-    // Sauvegarde de sécurité avant restauration
-    const now = new Date();
-
-    const safetyId =
-      `${now.toISOString().slice(0, 10)}_` +
-      `${now.toISOString().slice(11, 19).replace(/:/g, "-")}_pre-restore`;
-
-    const safety = {
-      createdAt: now.toISOString(),
-      preRestore: true,
-      collections: {},
-    };
-
-    const currentOrdersSnap = await db.collection("orders").get();
-
-    safety.collections.orders = currentOrdersSnap.docs.map(doc => ({
-      ...doc.data(),
-      id: doc.id,
-    }));
-
-    for (const col of ["clients", "stock", "expenses", "settings"]) {
-      const snap = await db.collection("app").doc(col).get();
-      safety.collections[col] = snap.exists ? snap.data() : null;
-    }
-
-    await db.collection("backups").doc(safetyId).set(safety);
-
-    // Restauration
-    const cols = backup.collections || {};
-
-    if (Array.isArray(cols.orders)) {
-      const existingOrders = await db.collection("orders").get();
-
-      const batch = db.batch();
-
-      existingOrders.docs.forEach(docSnap => {
-        batch.delete(docSnap.ref);
-      });
-
-      cols.orders.forEach(order => {
-        if (!order?.id) return;
-
-        batch.set(
-          db.collection("orders").doc(order.id),
-          order
-        );
-      });
-
-      await batch.commit();
-    }
-
-    for (const col of ["clients", "stock", "expenses", "settings"]) {
-      if (cols[col]) {
-        await db.collection("app").doc(col).set(cols[col]);
-      }
-    }
-
-    const orderCount = Array.isArray(cols.orders)
-      ? cols.orders.length
-      : 0;
-
-    await db.collection("app").doc("sheetSyncGuard").set({
-      value: { orders: orderCount }
-    });
-
-    logger.info(
-      `✅ Restauration ${backupId} effectuée (${orderCount} commandes). Sauvegarde sécurité : ${safetyId}.`
-    );
-
-    return {
-      success: true,
-      orderCount,
-      safetyBackupId: safetyId
-    };
+  // Sauvegarde de sécurité avant restauration
+  const now = new Date();
+  const safetyId = `${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}_pre-restore`;
+  const safety = { createdAt: now.toISOString(), preRestore: true, collections: {} };
+  safety.collections.orders = await backupOrders();
+  for (const col of APP_COLLECTIONS) {
+    const snap = await db.collection("app").doc(col).get();
+    safety.collections[col] = snap.exists ? snap.data() : null;
   }
-);
+  await db.collection("backups").doc(safetyId).set(safety);
+
+  // Restauration
+  const cols = backup.collections || {};
+  if (cols.orders) await restoreOrdersFromBackup(cols.orders);
+  for (const col of APP_COLLECTIONS) {
+    if (cols[col]) await db.collection("app").doc(col).set(cols[col]);
+  }
+
+  // Réinitialisation du garde-fou Sheet
+  const orderCount = Array.isArray(cols.orders?.value) ? cols.orders.value.length : 0;
+  await db.collection("app").doc("sheetSyncGuard").set({ value: { orders: orderCount } });
+
+  logger.info(`✅ Restauration ${backupId} effectuée (${orderCount} commandes). Sauvegarde de sécurité : ${safetyId}.`);
+  return { success: true, orderCount, safetyBackupId: safetyId };
+});
 
 // ───────────────────────────────────────────────────────────
 // 9) Recherche de clients potentiellement en doublon
@@ -1003,12 +887,12 @@ exports.fixRecoveredIds = onCall({ region: REGION }, async (request) => {
     "recovered_backdrop": "backdrop",
   };
 
-  const snap = await db.collection("app").doc("orders").get();
-  const orders = snap.data().value || [];
+  const orders = await getAllOrders();
   let fixedOrders = 0, fixedItems = 0;
+  const toWrite = [];
 
-  const corrected = orders.map(o => {
-    if (!o.items || !o.items.some(i => (i.id || "").startsWith("recovered_"))) return o;
+  for (const o of orders) {
+    if (!o.items || !o.items.some(i => (i.id || "").startsWith("recovered_"))) continue;
     fixedOrders++;
     const newItems = o.items.map(i => {
       const newId = ID_MAP[i.id];
@@ -1016,38 +900,16 @@ exports.fixRecoveredIds = onCall({ region: REGION }, async (request) => {
       fixedItems++;
       return { ...i, id: newId };
     });
-    return { ...o, items: newItems };
-  });
+    toWrite.push({ ...o, items: newItems });
+  }
 
-  await db.collection("app").doc("orders").set({ value: corrected });
+  // Écriture granulaire : seules les commandes modifiées
+  for (let i = 0; i < toWrite.length; i += 400) {
+    const batch = db.batch();
+    toWrite.slice(i, i + 400).forEach(o => batch.set(db.collection("orders").doc(o.id), o));
+    await batch.commit();
+  }
+
   logger.info(`✅ fixRecoveredIds : ${fixedOrders} commandes, ${fixedItems} articles corrigés.`);
   return { fixedOrders, fixedItems };
 });
-exports.migrateOrders = onCall(
-  { region: REGION, timeoutSeconds: 540 },
-  async () => {
-
-    const oldSnap = await db.collection("app").doc("orders").get();
-
-    if (!oldSnap.exists) {
-      return { success: false, message: "app/orders introuvable" };
-    }
-
-    const orders = oldSnap.data().value || [];
-
-    let count = 0;
-
-    for (const order of orders) {
-      if (!order.id) continue;
-
-      await db.collection("orders").doc(order.id).set(order);
-
-      count++;
-    }
-
-    return {
-      success: true,
-      migrated: count
-    };
-  }
-);

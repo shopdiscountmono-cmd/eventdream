@@ -1,66 +1,18 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import React from "react";
-import {
-  doc,
-  setDoc,
-  onSnapshot,
-  collection,
-  getDocs,
-  deleteDoc,
-  updateDoc
-} from "firebase/firestore";
+import { doc, setDoc, onSnapshot, collection, writeBatch, deleteDoc, getDocs, query, orderBy } from "firebase/firestore";
 import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.4 — fusion clients groupe par groupe avec bouton dédié (01/07/2026)";
+const APP_VERSION = "v3.36.4 — migration architecture : une commande = un document Firestore (multi-utilisateurs sans conflit) (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
 // document Firestore : collection "app" → document <key> → { value: [...] }.
 // Lecture en temps réel via onSnapshot, écriture à chaque modification.
-// ─── SYNCHRONISATION FIRESTORE ───────────────────────────
-
-function useOrdersFirestore() {
-  const [orders, setOrders] = useState([]);
-
-  useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, "orders"),
-      (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          ...doc.data(),
-          firestoreId: doc.id
-        }));
-
-        setOrders(data);
-      }
-    );
-
-    return () => unsub();
-  }, []);
-
-const updateOrders = async (next) => {
-  const updated =
-    typeof next === "function"
-      ? next(orders)
-      : next;
-
-setOrders(updated);
-
-for (const order of updated) {
-  if (!order?.id) continue;
-
-  await setDoc(
-    doc(db, "orders", order.id),
-    JSON.parse(JSON.stringify(order))
-  );
-}};
-
-return [orders, updateOrders];}
-
 function useFirestoreState(key, initialValue) {
   const [value, setValue] = useState(initialValue);
   const valueRef = useRef(initialValue);
@@ -133,7 +85,88 @@ function useFirestoreState(key, initialValue) {
   return [value, update];
 }
 
-// ─── CATALOGUE DE BASE ────────────────────────────────────────────────────────
+// ─── SYNCHRONISATION TEMPS RÉEL — COLLECTION ORDERS ──────────────────────────
+// Nouvelle architecture : chaque commande est un document individuel dans la
+// collection "orders". Avantages vs l'ancien tableau monolithique :
+//   • Multi-utilisateurs sans conflit : deux utilisateurs modifiant des commandes
+//     différentes n'écrasent plus les données de l'autre.
+//   • Écriture granulaire : seules les commandes modifiées sont réécrites.
+//   • Temps réel natif : chaque appareil reçoit les changements instantanément.
+function useOrdersCollection() {
+  const [orders, setOrdersState] = useState([]);
+  const ordersRef = useRef([]);
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    // Écoute toute la collection en temps réel
+    const unsub = onSnapshot(
+      collection(db, "orders"),
+      { includeMetadataChanges: false },
+      (snap) => {
+        const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+        ordersRef.current = data;
+        setOrdersState(data);
+        loadedRef.current = true;
+      },
+      (err) => console.error("Orders collection sync error:", err)
+    );
+    return unsub;
+  }, []);
+
+  // Interface identique à useFirestoreState : accepte une valeur ou une fonction
+  // (next => next(prev)). Diff automatique : seules les commandes ajoutées/modifiées
+  // sont écrites, les supprimées sont effacées. Jamais de réécriture globale.
+  const setOrders = useCallback((next) => {
+    const prev = ordersRef.current;
+    const nextOrders = typeof next === "function" ? next(prev) : next;
+    if (!Array.isArray(nextOrders)) return;
+
+    // Mise à jour optimiste de l'état local immédiatement
+    ordersRef.current = nextOrders;
+    setOrdersState(nextOrders);
+
+    // Diff : trouvé les ajouts/modifications/suppressions
+    const prevById = new Map(prev.map(o => [o.id, o]));
+    const nextById = new Map(nextOrders.map(o => [o.id, o]));
+    const toWrite = [];
+    const toDelete = [];
+
+    for (const [id, order] of nextById) {
+      const prevOrder = prevById.get(id);
+      // Écrire si nouveau ou modifié (comparaison JSON simple)
+      if (!prevOrder || JSON.stringify(prevOrder) !== JSON.stringify(order)) {
+        toWrite.push(order);
+      }
+    }
+    for (const [id] of prevById) {
+      if (!nextById.has(id)) toDelete.push(id);
+    }
+
+    if (toWrite.length === 0 && toDelete.length === 0) return;
+
+    // Écriture par batch (max 500 ops par batch Firestore)
+    (async () => {
+      try {
+        const all = [...toWrite.map(o => ({ op: "set", id: o.id, data: JSON.parse(JSON.stringify(o)) })),
+                    ...toDelete.map(id => ({ op: "delete", id }))];
+        for (let i = 0; i < all.length; i += 400) {
+          const batch = writeBatch(db);
+          all.slice(i, i + 400).forEach(op => {
+            const ref = doc(db, "orders", op.id);
+            op.op === "set" ? batch.set(ref, op.data) : batch.delete(ref);
+          });
+          await batch.commit();
+        }
+      } catch (err) {
+        console.error("Orders write error:", err);
+      }
+    })();
+  }, []);
+
+  return [orders, setOrders];
+}
+
+
 const BASE_CATALOG = [
   { id: "chaise_napoleon", name: "Chaise Napoléon", unit: "unité", price: 2.5, icon: "🪑", category: "Chaises", coutAchat: 8 },
   { id: "chaise_pliante", name: "Chaise Pliante", unit: "unité", price: 1.2, icon: "🪑", category: "Chaises", coutAchat: 4 },
@@ -4690,7 +4723,9 @@ function AppInner() {
   const [view, setViewRaw] = useState("dashboard");
   const setView = (v) => { setViewRaw(v); };
   // Données synchronisées avec Firestore (sauvegarde cloud automatique)
-  const [orders, setOrders] = useOrdersFirestore();
+  // ✅ Nouvelle architecture : une commande = un document Firestore individuel
+  // Plus de tableau monolithique → plus de conflits multi-utilisateurs
+  const [orders, setOrders] = useOrdersCollection();
   const [stock, setStock] = useFirestoreState("stock", INITIAL_STOCK);
   const [expenses, setExpenses] = useFirestoreState("expenses", []);
   const [clients, setClients] = useFirestoreState("clients", []);
@@ -4764,13 +4799,7 @@ function AppInner() {
     return [newOrder, ...prev];
   });
   const [askConfirm, ConfirmUI] = useConfirm();
-  const deleteOrder = async (id) => {
-  if (!(await askConfirm("Supprimer cette commande ?"))) return;
-
-  await deleteDoc(doc(db, "orders", id));
-
-  setOrders(prev => prev.filter(o => o.id !== id));
-};
+  const deleteOrder = async (id) => { if (await askConfirm("Supprimer cette commande ?")) setOrders(prev => prev.filter(o => o.id !== id), true); };
   const updateStatus = (id, status) => setOrders(prev => prev.map(o => {
     if (o.id !== id) return o;
     // Passage automatique en phase retour quand livré

@@ -25,36 +25,45 @@ const SHEETS_SERVICE_ACCOUNT = "eventdream-app@appspot.gserviceaccount.com";
 // Statuts de commande considérés "actifs" (alignés sur la logique du tableau de bord App.jsx)
 const ACTIVE_STATUSES = ["Confirmée", "Préparée", "Chez le client"];
 
-// ─── Helpers nouvelle architecture orders (collection individuelle) ───────────
-// Lit toutes les commandes depuis la collection "orders" (nouveaux documents individuels).
-// Fallback vers l'ancienne structure app/orders si la nouvelle est vide (pendant la migration).
-async function getAllOrders() {
-  const snap = await db.collection("orders").get();
-  if (!snap.empty) {
-    return snap.docs.map(d => ({ ...d.data(), id: d.id }));
-  }
-  // Fallback : ancienne structure
-  const old = await db.collection("app").doc("orders").get();
+// ─── Helpers nouvelle architecture (collections individuelles) ────────────────
+// Lit tous les documents d'une collection individuelle (orders, clients, stock, expenses).
+async function getCollection(name) {
+  const snap = await db.collection(name).get();
+  if (!snap.empty) return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+  // Fallback ancienne structure app/{name}
+  const old = await db.collection("app").doc(name).get();
   return old.exists ? (old.data().value || []) : [];
 }
 
-// Écrit un tableau de commandes dans la nouvelle collection (par batch).
-async function writeAllOrders(orders) {
+// Alias pour compatibilité avec le code existant
+async function getAllOrders() { return getCollection("orders"); }
+
+// Écrit un tableau d'items dans une collection individuelle (par batch).
+async function writeCollection(name, items) {
   const BATCH_SIZE = 400;
-  for (let i = 0; i < orders.length; i += BATCH_SIZE) {
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
     const batch = db.batch();
-    orders.slice(i, i + BATCH_SIZE).forEach(o => {
-      if (!o.id) return;
-      batch.set(db.collection("orders").doc(o.id), o);
+    items.slice(i, i + BATCH_SIZE).forEach(item => {
+      if (!item.id) return;
+      batch.set(db.collection(name).doc(String(item.id)), item);
     });
     await batch.commit();
   }
 }
 
-// Met à jour une seule commande dans la nouvelle collection.
+// Met à jour un seul document dans une collection individuelle.
 async function writeOrder(order) {
-  if (!order.id) throw new Error("writeOrder: order.id manquant");
-  await db.collection("orders").doc(order.id).set(order);
+  if (!order.id) throw new Error("writeOrder: id manquant");
+  await db.collection("orders").doc(String(order.id)).set(order);
+}
+
+// Vide et réécrit une collection complète (pour la restauration).
+async function restoreCollection(name, items) {
+  const existing = await db.collection(name).get();
+  const delBatch = db.batch();
+  existing.docs.forEach(d => delBatch.delete(d.ref));
+  await delBatch.commit();
+  await writeCollection(name, items);
 }
 
 
@@ -377,9 +386,7 @@ async function syncOrdersToSheet() {
 async function syncExpensesToSheet() {
   const sheetId = await getSheetId();
   if (!sheetId) return;
-  const snap = await db.collection("app").doc("expenses").get();
-  const expenses = snap.exists ? snap.data().value : [];
-  if (!Array.isArray(expenses)) return;
+  const expenses = await getCollection("expenses");
   if (await guardAgainstMassDeletion("expenses", expenses.length)) return;
 
   const rows = [["Date", "Libellé", "Catégorie", "Montant (€)", "Fournisseur", "Moyen de paiement", "Notes"]];
@@ -434,9 +441,8 @@ exports.sendCampaign = onCall(
       throw new HttpsError("failed-precondition", "Aucun email expéditeur configuré (Réglages → Campagnes).");
     }
 
-    const clientsSnap = await db.collection("app").doc("clients").get();
-    const allClients = clientsSnap.exists ? clientsSnap.data().value : [];
-    const targets = (Array.isArray(allClients) ? allClients : []).filter(
+    const allClients = await getCollection("clients");
+    const targets = allClients.filter(
       c => recipientIds.includes(c.id) && c.email && !c.unsubscribed
     );
 
@@ -473,12 +479,13 @@ exports.unsubscribe = onRequest({ region: REGION }, async (req, res) => {
   const id = req.query.id;
   if (!id) { res.status(400).send("Lien de désabonnement invalide."); return; }
   try {
-    const ref = db.collection("app").doc("clients");
-    const snap = await ref.get();
-    const clientsList = snap.exists ? snap.data().value : [];
-    if (!Array.isArray(clientsList)) { res.status(500).send("Erreur serveur."); return; }
-    const updated = clientsList.map(c => c.id === id ? { ...c, unsubscribed: true } : c);
-    await ref.set({ value: updated });
+    const clientsList = await getCollection("clients");
+    if (!clientsList.length) { res.status(500).send("Erreur serveur."); return; }
+    // Mise à jour du client individuel
+    const client = clientsList.find(c => c.id === id);
+    if (client) {
+      await db.collection("clients").doc(id).set({ ...client, unsubscribed: true });
+    }
     res.set("Content-Type", "text/html; charset=utf-8");
     res.send(`<html><body style="font-family:sans-serif;text-align:center;padding:60px 20px;">
       <h2>✅ Vous êtes désabonné(e)</h2>
@@ -545,25 +552,8 @@ exports.cleanupOldPhotos = onSchedule(
 //    Conservation des 7 derniers jours (les plus anciennes sont supprimées).
 //    En cas d'échec, une notification push est envoyée à l'équipe.
 // ───────────────────────────────────────────────────────────
-const APP_COLLECTIONS = ["clients", "stock", "expenses", "settings"]; // hors orders (nouvelle collection)
+const INDIVIDUAL_COLLECTIONS = ["orders", "clients", "stock", "expenses"];
 const BACKUP_RETENTION_DAYS = 7;
-
-// Helpers sauvegarde : lit/écrit les orders depuis/vers la nouvelle collection
-async function backupOrders() {
-  const orders = await getAllOrders();
-  return { value: orders }; // format compatible avec l'ancien backup
-}
-
-async function restoreOrdersFromBackup(data) {
-  const orders = Array.isArray(data?.value) ? data.value : [];
-  if (orders.length === 0) return;
-  // Vider l'ancienne collection et réécrire
-  const existing = await db.collection("orders").get();
-  const delBatch = db.batch();
-  existing.docs.forEach(d => delBatch.delete(d.ref));
-  await delBatch.commit();
-  await writeAllOrders(orders);
-}
 
 exports.dailyBackup = onSchedule(
   { schedule: "0 2 * * *", region: SCHEDULER_REGION, timeZone: "Europe/Paris" },
@@ -572,19 +562,19 @@ exports.dailyBackup = onSchedule(
       const now = new Date();
       const dateKey = now.toISOString().slice(0, 10);
       const backupId = `${dateKey}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}`;
-
       const backup = { createdAt: now.toISOString(), collections: {} };
-      // Sauvegarde orders depuis la nouvelle collection
-      backup.collections.orders = await backupOrders();
-      backup.orderCount = backup.collections.orders.value.length;
-      // Autres collections depuis app/
-      for (const col of APP_COLLECTIONS) {
-        const snap = await db.collection("app").doc(col).get();
-        backup.collections[col] = snap.exists ? snap.data() : null;
+
+      // Sauvegarde toutes les collections individuelles
+      for (const col of INDIVIDUAL_COLLECTIONS) {
+        const items = await getCollection(col);
+        backup.collections[col] = { value: items };
       }
-      const clientsSnap = await db.collection("app").doc("clients").get();
-      backup.clientCount = Array.isArray(clientsSnap.exists ? clientsSnap.data().value : []) ?
-        (clientsSnap.data()?.value?.length || 0) : 0;
+      // Settings reste dans app/
+      const settingsSnap = await db.collection("app").doc("settings").get();
+      backup.collections.settings = settingsSnap.exists ? settingsSnap.data() : null;
+
+      backup.orderCount = backup.collections.orders?.value?.length || 0;
+      backup.clientCount = backup.collections.clients?.value?.length || 0;
 
       await db.collection("backups").doc(backupId).set(backup);
       logger.info(`✅ Sauvegarde ${backupId} : ${backup.orderCount} commandes, ${backup.clientCount} clients.`);
@@ -593,7 +583,6 @@ exports.dailyBackup = onSchedule(
       const oldSnaps = await db.collection("backups").where("createdAt", "<", cutoff + "T00:00:00.000Z").get();
       await Promise.all(oldSnaps.docs.map(d => d.ref.delete()));
       if (oldSnaps.docs.length > 0) logger.info(`🗑️ ${oldSnaps.docs.length} ancienne(s) sauvegarde(s) supprimée(s).`);
-
     } catch (err) {
       logger.error("❌ Échec de la sauvegarde automatique :", err.message);
       await sendToAll("❌ Sauvegarde EventDream échouée", "La sauvegarde automatique a échoué.", { kind: "alerte" }, { excludeRoles: ["livreur"] });
@@ -611,14 +600,16 @@ exports.triggerBackup = onCall({ region: REGION }, async (request) => {
   const now = new Date();
   const backupId = `${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}_manual`;
   const backup = { createdAt: now.toISOString(), manual: true, collections: {} };
-  backup.collections.orders = await backupOrders();
-  backup.orderCount = backup.collections.orders.value.length;
-  for (const col of APP_COLLECTIONS) {
-    const snap = await db.collection("app").doc(col).get();
-    backup.collections[col] = snap.exists ? snap.data() : null;
+
+  for (const col of INDIVIDUAL_COLLECTIONS) {
+    const items = await getCollection(col);
+    backup.collections[col] = { value: items };
   }
-  const clientsSnap = await db.collection("app").doc("clients").get();
-  backup.clientCount = clientsSnap.exists ? (clientsSnap.data()?.value?.length || 0) : 0;
+  const settingsSnap = await db.collection("app").doc("settings").get();
+  backup.collections.settings = settingsSnap.exists ? settingsSnap.data() : null;
+  backup.orderCount = backup.collections.orders?.value?.length || 0;
+  backup.clientCount = backup.collections.clients?.value?.length || 0;
+
   await db.collection("backups").doc(backupId).set(backup);
   logger.info(`✅ Sauvegarde manuelle ${backupId} : ${backup.orderCount} commandes.`);
   return { backupId, orderCount: backup.orderCount, clientCount: backup.clientCount, createdAt: backup.createdAt };
@@ -633,7 +624,6 @@ exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (r
 
   const { backupId } = request.data || {};
   if (!backupId) throw new HttpsError("invalid-argument", "ID de sauvegarde requis.");
-
   const backupSnap = await db.collection("backups").doc(backupId).get();
   if (!backupSnap.exists) throw new HttpsError("not-found", "Sauvegarde introuvable.");
   const backup = backupSnap.data();
@@ -642,19 +632,18 @@ exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (r
   const now = new Date();
   const safetyId = `${now.toISOString().slice(0, 10)}_${now.toISOString().slice(11, 19).replace(/:/g, "-")}_pre-restore`;
   const safety = { createdAt: now.toISOString(), preRestore: true, collections: {} };
-  safety.collections.orders = await backupOrders();
-  for (const col of APP_COLLECTIONS) {
-    const snap = await db.collection("app").doc(col).get();
-    safety.collections[col] = snap.exists ? snap.data() : null;
+  for (const col of INDIVIDUAL_COLLECTIONS) {
+    const items = await getCollection(col);
+    safety.collections[col] = { value: items };
   }
   await db.collection("backups").doc(safetyId).set(safety);
 
-  // Restauration
+  // Restauration de chaque collection individuelle
   const cols = backup.collections || {};
-  if (cols.orders) await restoreOrdersFromBackup(cols.orders);
-  for (const col of APP_COLLECTIONS) {
-    if (cols[col]) await db.collection("app").doc(col).set(cols[col]);
+  for (const col of INDIVIDUAL_COLLECTIONS) {
+    if (cols[col]?.value) await restoreCollection(col, cols[col].value);
   }
+  if (cols.settings) await db.collection("app").doc("settings").set(cols.settings);
 
   // Réinitialisation du garde-fou Sheet
   const orderCount = Array.isArray(cols.orders?.value) ? cols.orders.value.length : 0;
@@ -670,9 +659,7 @@ exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (r
 // ───────────────────────────────────────────────────────────
 exports.findDuplicateClients = onCall({ region: REGION }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
-
-  const snap = await db.collection("app").doc("clients").get();
-  const clients = snap.data().value || [];
+  const clients = await getCollection("clients");
 
   const groups = []; // [{ reason, clients: [c1, c2, ...] }]
   const seen = new Set();
@@ -749,8 +736,7 @@ exports.mergeSpecificClients = onCall({ region: REGION }, async (request) => {
   const { clientIds } = request.data || {};
   if (!Array.isArray(clientIds) || clientIds.length < 2) throw new HttpsError("invalid-argument", "Au moins 2 IDs requis.");
 
-  const snap = await db.collection("app").doc("clients").get();
-  const clients = snap.data().value || [];
+  const clients = await getCollection("clients");
 
   const targets = clientIds.map(id => clients.find(c => c.id === id)).filter(Boolean);
   if (targets.length < 2) throw new HttpsError("not-found", "Clients introuvables.");
@@ -773,8 +759,12 @@ exports.mergeSpecificClients = onCall({ region: REGION }, async (request) => {
 
   // Supprimer les clients absorbés et remplacer le maître
   const mergedIds = new Set(clientIds.slice(1));
-  const updated = clients.filter(c => !mergedIds.has(c.id)).map(c => c.id === master.id ? master : c);
-  await db.collection("app").doc("clients").set({ value: updated });
+  // Supprimer les clients absorbés
+  for (const id of mergedIds) {
+    await db.collection("clients").doc(id).delete();
+  }
+  // Mettre à jour le maître
+  await db.collection("clients").doc(master.id).set(master);
   logger.info(`mergeSpecificClients : fusionné ${clientIds.length} clients → 1 (maître: ${master.id})`);
   return { success: true, masterId: master.id, masterName: master.name };
 });
@@ -789,8 +779,7 @@ exports.deduplicateClients = onCall({ region: REGION }, async (request) => {
   const email = (request.auth.token.email || "").toLowerCase();
   if (roles[email] === "livreur") throw new HttpsError("permission-denied", "Réservé aux admins.");
 
-  const snap = await db.collection("app").doc("clients").get();
-  const clients = snap.data().value || [];
+  const clients = await getCollection("clients");
 
   const normPhone = (s) => (s || "").replace(/[\s\-\.]/g, "").replace(/^(\+33|0033)/, "0").trim();
   const getPhones = (c) => [...new Set([...(c.phones || []), c.phone || ""].map(normPhone).filter(p => p.length >= 8))];
@@ -850,7 +839,15 @@ exports.deduplicateClients = onCall({ region: REGION }, async (request) => {
   // Nettoyer les champs vides
   merged = merged.map(c => ({ ...c, phones: (c.phones || []).filter(Boolean), addresses: (c.addresses || []).filter(Boolean) }));
 
-  await db.collection("app").doc("clients").set({ value: merged });
+  // Écriture granulaire : supprimer les doublons, mettre à jour les maîtres
+  const mergedIds = new Set(merged.map(c => c.id));
+  const toDelete = clients.filter(c => !mergedIds.has(c.id));
+  for (let i = 0; i < toDelete.length; i += 400) {
+    const batch = db.batch();
+    toDelete.slice(i, i + 400).forEach(c => batch.delete(db.collection("clients").doc(c.id)));
+    await batch.commit();
+  }
+  await writeCollection("clients", merged);
   logger.info(`Déduplication clients : ${clients.length} → ${merged.length} (${clients.length - merged.length} supprimés)`);
   return { before: clients.length, after: merged.length, removed: clients.length - merged.length };
 });
@@ -913,5 +910,3 @@ exports.fixRecoveredIds = onCall({ region: REGION }, async (request) => {
   logger.info(`✅ fixRecoveredIds : ${fixedOrders} commandes, ${fixedItems} articles corrigés.`);
   return { fixedOrders, fixedItems };
 });
-
-

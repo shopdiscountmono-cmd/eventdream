@@ -1,3 +1,6 @@
+jeudi 23 juillet 2026
+00:13
+
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot, collection, writeBatch, deleteDoc, getDocs, query, orderBy } from "firebase/firestore";
@@ -7,7 +10,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.4 — migration architecture complète : orders + clients + stock + expenses en documents individuels Firestore (14/07/2026)";
+const APP_VERSION = "v3.36.4 — migration architecture : une commande = un document Firestore (multi-utilisateurs sans conflit) (01/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -85,44 +88,58 @@ function useFirestoreState(key, initialValue) {
   return [value, update];
 }
 
-// ─── SYNCHRONISATION TEMPS RÉEL — COLLECTIONS INDIVIDUELLES ──────────────────
-// Hook générique : chaque item du tableau devient un document Firestore individuel.
-// Utilisé pour orders, clients, stock, expenses.
-// Avantages : multi-utilisateurs sans conflit, écriture granulaire, temps réel natif.
-function useCollectionState(collectionName) {
-  const [items, setItemsState] = useState([]);
-  const itemsRef = useRef([]);
+// ─── SYNCHRONISATION TEMPS RÉEL — COLLECTION ORDERS ──────────────────────────
+// Nouvelle architecture : chaque commande est un document individuel dans la
+// collection "orders". Avantages vs l'ancien tableau monolithique :
+//   • Multi-utilisateurs sans conflit : deux utilisateurs modifiant des commandes
+//     différentes n'écrasent plus les données de l'autre.
+//   • Écriture granulaire : seules les commandes modifiées sont réécrites.
+//   • Temps réel natif : chaque appareil reçoit les changements instantanément.
+function useOrdersCollection() {
+  const [orders, setOrdersState] = useState([]);
+  const ordersRef = useRef([]);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
+    // Écoute toute la collection en temps réel
     const unsub = onSnapshot(
-      collection(db, collectionName),
+      collection(db, "orders"),
       { includeMetadataChanges: false },
       (snap) => {
         const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-        itemsRef.current = data;
-        setItemsState(data);
+        ordersRef.current = data;
+        setOrdersState(data);
+        loadedRef.current = true;
       },
-      (err) => console.error(`${collectionName} sync error:`, err)
+      (err) => console.error("Orders collection sync error:", err)
     );
     return unsub;
-  }, [collectionName]);
+  }, []);
 
-  const setItems = useCallback((next) => {
-    const prev = itemsRef.current;
-    const nextItems = typeof next === "function" ? next(prev) : next;
-    if (!Array.isArray(nextItems)) return;
+  // Interface identique à useFirestoreState : accepte une valeur ou une fonction
+  // (next => next(prev)). Diff automatique : seules les commandes ajoutées/modifiées
+  // sont écrites, les supprimées sont effacées. Jamais de réécriture globale.
+  const setOrders = useCallback((next) => {
+    const prev = ordersRef.current;
+    const nextOrders = typeof next === "function" ? next(prev) : next;
+    if (!Array.isArray(nextOrders)) return;
 
-    itemsRef.current = nextItems;
-    setItemsState(nextItems);
+    // Mise à jour optimiste de l'état local immédiatement
+    ordersRef.current = nextOrders;
+    setOrdersState(nextOrders);
 
+    // Diff : trouvé les ajouts/modifications/suppressions
     const prevById = new Map(prev.map(o => [o.id, o]));
-    const nextById = new Map(nextItems.map(o => [o.id, o]));
+    const nextById = new Map(nextOrders.map(o => [o.id, o]));
     const toWrite = [];
     const toDelete = [];
 
-    for (const [id, item] of nextById) {
-      const prevItem = prevById.get(id);
-      if (!prevItem || JSON.stringify(prevItem) !== JSON.stringify(item)) toWrite.push(item);
+    for (const [id, order] of nextById) {
+      const prevOrder = prevById.get(id);
+      // Écrire si nouveau ou modifié (comparaison JSON simple)
+      if (!prevOrder || JSON.stringify(prevOrder) !== JSON.stringify(order)) {
+        toWrite.push(order);
+      }
     }
     for (const [id] of prevById) {
       if (!nextById.has(id)) toDelete.push(id);
@@ -130,27 +147,26 @@ function useCollectionState(collectionName) {
 
     if (toWrite.length === 0 && toDelete.length === 0) return;
 
+    // Écriture par batch (max 500 ops par batch Firestore)
     (async () => {
       try {
-        const all = [
-          ...toWrite.map(o => ({ op: "set", id: o.id, data: JSON.parse(JSON.stringify(o)) })),
-          ...toDelete.map(id => ({ op: "delete", id }))
-        ];
+        const all = [...toWrite.map(o => ({ op: "set", id: o.id, data: JSON.parse(JSON.stringify(o)) })),
+                    ...toDelete.map(id => ({ op: "delete", id }))];
         for (let i = 0; i < all.length; i += 400) {
           const batch = writeBatch(db);
           all.slice(i, i + 400).forEach(op => {
-            const ref = doc(db, collectionName, op.id);
+            const ref = doc(db, "orders", op.id);
             op.op === "set" ? batch.set(ref, op.data) : batch.delete(ref);
           });
           await batch.commit();
         }
       } catch (err) {
-        console.error(`${collectionName} write error:`, err);
+        console.error("Orders write error:", err);
       }
     })();
-  }, [collectionName]);
+  }, []);
 
-  return [items, setItems];
+  return [orders, setOrders];
 }
 
 
@@ -4712,12 +4728,10 @@ function AppInner() {
   // Données synchronisées avec Firestore (sauvegarde cloud automatique)
   // ✅ Nouvelle architecture : une commande = un document Firestore individuel
   // Plus de tableau monolithique → plus de conflits multi-utilisateurs
-  // ✅ Nouvelle architecture complète : chaque item = un document Firestore individuel
-  // Multi-utilisateurs sans conflit, temps réel natif, écriture granulaire.
-  const [orders, setOrders] = useCollectionState("orders");
-  const [stock, setStock] = useCollectionState("stock");
-  const [expenses, setExpenses] = useCollectionState("expenses");
-  const [clients, setClients] = useCollectionState("clients");
+  const [orders, setOrders] = useOrdersCollection();
+  const [stock, setStock] = useFirestoreState("stock", INITIAL_STOCK);
+  const [expenses, setExpenses] = useFirestoreState("expenses", []);
+  const [clients, setClients] = useFirestoreState("clients", []);
   const [settings, setSettings] = useFirestoreState("settings", DEFAULT_SETTINGS);
   const [expenseCategories, setExpenseCategories] = useFirestoreState("expenseCategories", EXPENSE_CATEGORIES);
   const [recurringExpenses, setRecurringExpenses] = useFirestoreState("recurringExpenses", []);

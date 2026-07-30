@@ -1,6 +1,3 @@
-jeudi 23 juillet 2026
-00:13
-
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot, collection, writeBatch, deleteDoc, getDocs, query, orderBy } from "firebase/firestore";
@@ -10,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.36.4 — migration architecture : une commande = un document Firestore (multi-utilisateurs sans conflit) (01/07/2026)";
+const APP_VERSION = "v3.37.0 — flux livraison complet (encaissement+caution+confirmation+matériel+signature) + statut Non confirmé + créateur du devis + réglages paiement (IBAN/Revolut/PayPal) (14/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -88,58 +85,44 @@ function useFirestoreState(key, initialValue) {
   return [value, update];
 }
 
-// ─── SYNCHRONISATION TEMPS RÉEL — COLLECTION ORDERS ──────────────────────────
-// Nouvelle architecture : chaque commande est un document individuel dans la
-// collection "orders". Avantages vs l'ancien tableau monolithique :
-//   • Multi-utilisateurs sans conflit : deux utilisateurs modifiant des commandes
-//     différentes n'écrasent plus les données de l'autre.
-//   • Écriture granulaire : seules les commandes modifiées sont réécrites.
-//   • Temps réel natif : chaque appareil reçoit les changements instantanément.
-function useOrdersCollection() {
-  const [orders, setOrdersState] = useState([]);
-  const ordersRef = useRef([]);
-  const loadedRef = useRef(false);
+// ─── SYNCHRONISATION TEMPS RÉEL — COLLECTIONS INDIVIDUELLES ──────────────────
+// Hook générique : chaque item du tableau devient un document Firestore individuel.
+// Utilisé pour orders, clients, stock, expenses.
+// Avantages : multi-utilisateurs sans conflit, écriture granulaire, temps réel natif.
+function useCollectionState(collectionName) {
+  const [items, setItemsState] = useState([]);
+  const itemsRef = useRef([]);
 
   useEffect(() => {
-    // Écoute toute la collection en temps réel
     const unsub = onSnapshot(
-      collection(db, "orders"),
+      collection(db, collectionName),
       { includeMetadataChanges: false },
       (snap) => {
         const data = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-        ordersRef.current = data;
-        setOrdersState(data);
-        loadedRef.current = true;
+        itemsRef.current = data;
+        setItemsState(data);
       },
-      (err) => console.error("Orders collection sync error:", err)
+      (err) => console.error(`${collectionName} sync error:`, err)
     );
     return unsub;
-  }, []);
+  }, [collectionName]);
 
-  // Interface identique à useFirestoreState : accepte une valeur ou une fonction
-  // (next => next(prev)). Diff automatique : seules les commandes ajoutées/modifiées
-  // sont écrites, les supprimées sont effacées. Jamais de réécriture globale.
-  const setOrders = useCallback((next) => {
-    const prev = ordersRef.current;
-    const nextOrders = typeof next === "function" ? next(prev) : next;
-    if (!Array.isArray(nextOrders)) return;
+  const setItems = useCallback((next) => {
+    const prev = itemsRef.current;
+    const nextItems = typeof next === "function" ? next(prev) : next;
+    if (!Array.isArray(nextItems)) return;
 
-    // Mise à jour optimiste de l'état local immédiatement
-    ordersRef.current = nextOrders;
-    setOrdersState(nextOrders);
+    itemsRef.current = nextItems;
+    setItemsState(nextItems);
 
-    // Diff : trouvé les ajouts/modifications/suppressions
     const prevById = new Map(prev.map(o => [o.id, o]));
-    const nextById = new Map(nextOrders.map(o => [o.id, o]));
+    const nextById = new Map(nextItems.map(o => [o.id, o]));
     const toWrite = [];
     const toDelete = [];
 
-    for (const [id, order] of nextById) {
-      const prevOrder = prevById.get(id);
-      // Écrire si nouveau ou modifié (comparaison JSON simple)
-      if (!prevOrder || JSON.stringify(prevOrder) !== JSON.stringify(order)) {
-        toWrite.push(order);
-      }
+    for (const [id, item] of nextById) {
+      const prevItem = prevById.get(id);
+      if (!prevItem || JSON.stringify(prevItem) !== JSON.stringify(item)) toWrite.push(item);
     }
     for (const [id] of prevById) {
       if (!nextById.has(id)) toDelete.push(id);
@@ -147,26 +130,27 @@ function useOrdersCollection() {
 
     if (toWrite.length === 0 && toDelete.length === 0) return;
 
-    // Écriture par batch (max 500 ops par batch Firestore)
     (async () => {
       try {
-        const all = [...toWrite.map(o => ({ op: "set", id: o.id, data: JSON.parse(JSON.stringify(o)) })),
-                    ...toDelete.map(id => ({ op: "delete", id }))];
+        const all = [
+          ...toWrite.map(o => ({ op: "set", id: o.id, data: JSON.parse(JSON.stringify(o)) })),
+          ...toDelete.map(id => ({ op: "delete", id }))
+        ];
         for (let i = 0; i < all.length; i += 400) {
           const batch = writeBatch(db);
           all.slice(i, i + 400).forEach(op => {
-            const ref = doc(db, "orders", op.id);
+            const ref = doc(db, collectionName, op.id);
             op.op === "set" ? batch.set(ref, op.data) : batch.delete(ref);
           });
           await batch.commit();
         }
       } catch (err) {
-        console.error("Orders write error:", err);
+        console.error(`${collectionName} write error:`, err);
       }
     })();
-  }, []);
+  }, [collectionName]);
 
-  return [orders, setOrders];
+  return [items, setItems];
 }
 
 
@@ -290,7 +274,11 @@ const DEFAULT_SETTINGS = {
   campaignSenderEmail: "",
   campaignLogoUrl: "",
   campaignAccentColor: "#1a1a2e",
-  photoRetentionDays: 30, // suppression auto des photos (livraison/retour) X jours après clôture de la commande
+  photoRetentionDays: 30,
+  // Paiement
+  iban: "",
+  revolutLink: "", // ex: https://revolut.me/tonnom
+  paypalLink: "",  // ex: https://paypal.me/toncompte
   // Barèmes de tarification automatique des options de livraison, par ARTICLE individuel (id du stock).
   // Forme : { [itemId]: [{ min, max, price }, ...] }. Vide par défaut (0 € tant que non configuré).
   // Barèmes des options de livraison, par ARTICLE individuel (id du stock) :
@@ -310,8 +298,8 @@ const DEFAULT_SETTINGS = {
   notifRetourDelais: [24],
 };
 
-const STATUS_FLOW = ["Confirmée", "Préparée", "Chez le client", "Clôturée"];
-const STATUS_COLORS = { "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "Chez le client": "#10b981", "Clôturée": "#6b7280" };
+const STATUS_FLOW = ["Non confirmé", "Confirmée", "Préparée", "Chez le client", "Clôturée"];
+const STATUS_COLORS = { "Non confirmé": "#f97316", "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "Chez le client": "#10b981", "Clôturée": "#6b7280" };
 const EXPENSE_CATEGORIES = ["Achat matériel", "Maintenance / Réparation", "Carburant", "Loyer / Entrepôt", "Salaires", "Fournitures", "Assurance", "Autre"];
 const CAT_COLORS = { "Achat matériel": "#3b82f6", "Maintenance / Réparation": "#8b5cf6", "Carburant": "#f97316", "Loyer / Entrepôt": "#ef4444", "Salaires": "#10b981", "Fournitures": "#f59e0b", "Assurance": "#06b6d4", "Autre": "#6b7280" };
 const ICON_LIBRARY = ["🪑","💺","⭕","▬","🟦","🍽️","🍴","🔪","🥄","🍷","🥛","🍾","🥂","☕","🫖","🍶","🔥","⛺","🎪","🎉","🎈","🎀","🕯️","💡","🔦","🪩","🎤","🔊","🎸","📽️","🖼️","🪞","🏳️","➿","🧺","🧻","🪟","🚪","🛋️","🛏️","🚽","🚿","❄️","🌡️","🔌","🔋","🧯","🪜","🛒","📦","🧊","🍳","🥘","🍲","🧁","🎂","🌸","🌹","🌿","🕺"];
@@ -612,7 +600,7 @@ function stockShortage(form, allOrders, stock) {
   if (!myPeriod) return [];
   const occupying = (allOrders || []).filter(o =>
     o.id !== form.id &&
-    !["Brouillon", "Devis", "Clôturée"].includes(o.status) &&
+    !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(o.status) &&
     periodsOverlap(orderPeriod(o), myPeriod)
   );
   // Besoins de la commande courante, kits explosés en composants
@@ -1418,13 +1406,14 @@ function CampaignComposer({ open, onClose, selectedClients, settings, onSent }) 
 }
 
 // ─── FORMULAIRE DEVIS (assistant par étapes) ─────────────────────────────────
-function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, settings, stock }) {
+function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, settings, stock, currentUserEmail }) {
   const empty = {
     id: genDevisId(allOrders || []), clientName: "", clientPhone: "", clientPhones: [], clientEmail: "", address: "",
     deliveryMode: "retrait", deliveryKm: 0, deliveryMin: 0, trajetAller: true, trajetRetour: true, deliveryPriceManual: "", extraDaysPriceManual: "",
     deliveryDate: "", deliveryTime: "", returnDate: "", returnTime: "",
     items: [], discountType: "fixed", discountValue: 0,
-    acompte: 0, acompteMoyen: "", status: "Devis", phase: "livraison", notes: "",
+    acompte: 0, acompteMoyen: "", status: "Non confirmé", phase: "livraison", notes: "",
+    createdBy: currentUserEmail || "", createdAt: new Date().toISOString(),
   };
   const [form, setForm] = useState(initial || empty);
   const [step, setStep] = useState(1);
@@ -1571,7 +1560,7 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
     }
     const occupying = (allOrders || []).filter(o =>
       o.id !== form.id &&
-      !["Brouillon", "Devis", "Clôturée"].includes(o.status) &&
+      !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(o.status) &&
       periodsOverlap(orderPeriod(o), myPeriod)
     );
     const reserved = {};
@@ -2221,6 +2210,7 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
       <div style={{ background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "#fff", borderRadius: 16, padding: 20, marginBottom: 14 }}>
         <div style={{ fontSize: 11, opacity: 0.6 }}>FICHE {order.deliveryMode === "livraison" ? "LIVRAISON" : "RETRAIT"}</div>
         <div style={{ fontSize: 19, fontWeight: 900 }}>{order.id} — {order.clientName}</div>
+        {order.createdBy && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>✍️ Créé par {order.createdBy.split("@")[0]}</div>}
         <div style={{ opacity: 0.75, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13 }}>
           {order.deliveryDate && <span>📅 {fmtD(order.deliveryDate)}{order.deliveryTime ? ` à ${order.deliveryTime}` : ""}</span>}
           {order.returnDate && <span>↩️ {fmtD(order.returnDate)}{order.returnTime ? ` à ${order.returnTime}` : ""}</span>}
@@ -2516,14 +2506,14 @@ function Dashboard({ orders, expenses, settings, setView, setQuickFilter }) {
   const prepLimit = (() => { const d = new Date(); d.setDate(d.getDate() + 4); return d.toISOString().split("T")[0]; })();
   const inPrepWindow = (date) => date && date >= TODAY && date <= prepLimit;
   const actives = orders.filter(o =>
-    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status) &&
+    !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée"].includes(o.status) &&
     inPrepWindow(o.deliveryDate)
   ).length;
   // Liste combinée des prochains événements : livraisons ET retours à venir.
   const upcoming = useMemo(() => {
     const events = [];
     orders.forEach(o => {
-      if (["Brouillon", "Devis", "Clôturée"].includes(o.status)) return;
+      if (["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(o.status)) return;
       // Une fois la livraison/retrait effectué (phase passée en "retour"), on n'affiche plus
       // que l'étape retour. Avant ça, on n'affiche que l'étape départ — jamais les deux ensemble.
       const dejaLivre = o.phase === "retour" || o.status === "Chez le client";
@@ -3726,15 +3716,242 @@ function RetourCasse({ order, stock, onSave, onClose, settings }) {
 
 
 // ─── INTERFACE LIVREUR (livraisons du jour) ──────────────────────────────────
+// ─── FLUX DE LIVRAISON COMPLET ────────────────────────────────────────────────
+// Ordre : Encaissement → Caution → Confirmation → Matériel → Signature
+function DeliveryCheckout({ order, settings, stock, onConfirm, onRefuse, onClose }) {
+  const [checkoutStep, setCheckoutStep] = useState(1); // 1=encaissement 2=caution 3=confirmation 4=matériel 5=signature
+  const [askConfirm, ConfirmUI] = useConfirm();
+
+  // Étape 1 — Encaissement
+  const total = orderTotal(order, settings);
+  const acompte = parseFloat(order.acompte) || 0;
+  const solde = Math.max(0, total - acompte);
+  const [soldeEncaisse, setSoldeEncaisse] = useState(false);
+  const [modePaiement, setModePaiement] = useState("");
+  const [montantRecu, setMontantRecu] = useState(solde.toFixed(2));
+
+  // Étape 2 — Caution
+  const [cautionMode, setCautionMode] = useState(""); // "cheque"|"especes"|"autre"|"aucune"
+  const [cautionPhotos, setCautionPhotos] = useState([]); // [{file, preview}]
+  const [cautionUploading, setCautionUploading] = useState(false);
+  const cautionFileRef = useRef(null);
+
+  // Étape 4 — Matériel (copie modifiable)
+  const [items, setItems] = useState(order.items ? order.items.map(i => ({ ...i })) : []);
+
+  const MOYEN_LABELS = { paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB Revolut" };
+
+  const addCautionPhoto = (files) => {
+    const room = 3 - cautionPhotos.length;
+    if (room <= 0) return;
+    const list = Array.from(files).slice(0, room);
+    setCautionPhotos(prev => [...prev, ...list.map(f => ({ file: f, preview: URL.createObjectURL(f) }))]);
+  };
+
+  const handleFinalConfirm = async (bonData) => {
+    setCautionUploading(true);
+    const cautionUrls = [];
+    for (let i = 0; i < cautionPhotos.length; i++) {
+      try { cautionUrls.push(await uploadPhoto(order.id, "caution", cautionPhotos[i].file, i)); } catch (e) { console.error(e); }
+    }
+    onConfirm({ items, bonData, cautionMode, cautionPhotos: cautionUrls, modePaiement, soldeEncaisse });
+    setCautionUploading(false);
+  };
+
+  const STEPS = ["💰 Encaissement", "🔒 Caution", "✅ Confirmation", "📦 Matériel", "✍️ Signature"];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Indicateur d'étape */}
+      <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+        {STEPS.map((s, i) => (
+          <div key={i} style={{ flex: 1, height: 4, borderRadius: 4, background: i < checkoutStep - 1 ? "#10b981" : i === checkoutStep - 1 ? "#3b82f6" : "#e5e7eb" }} />
+        ))}
+      </div>
+      <div style={{ textAlign: "center", fontSize: 13, fontWeight: 800, color: "#1a1a2e" }}>{STEPS[checkoutStep - 1]}</div>
+
+      {/* ÉTAPE 1 — ENCAISSEMENT */}
+      {checkoutStep === 1 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ background: solde > 0 ? "#fff7ed" : "#f0fdf4", borderRadius: 12, padding: 16, textAlign: "center" }}>
+            <div style={{ fontSize: 12, color: "#666", fontWeight: 700, textTransform: "uppercase" }}>Solde à encaisser</div>
+            <div style={{ fontSize: 32, fontWeight: 900, color: solde > 0 ? "#c2410c" : "#10b981" }}>{solde.toFixed(2)} €</div>
+            {acompte > 0 && <div style={{ fontSize: 12, color: "#999" }}>Acompte déjà versé : {acompte.toFixed(2)} € · Total : {total.toFixed(2)} €</div>}
+          </div>
+
+          {solde > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Moyen de paiement :</div>
+              {[["especes","💵 Espèces"],["cb","💳 CB Revolut"],["paypal","💙 PayPal"],["virement","🏦 Virement"]].map(([k, l]) => (
+                <button key={k} onClick={() => setModePaiement(k)} style={{ padding: "12px 16px", borderRadius: 10, border: `2px solid ${modePaiement === k ? "#3b82f6" : "#e5e7eb"}`, background: modePaiement === k ? "#eff6ff" : "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{l}</button>
+              ))}
+
+              {modePaiement === "especes" && (
+                <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12 }}>
+                  <Inp label="Montant reçu (€)" type="number" value={montantRecu} onChange={setMontantRecu} step="0.01" />
+                  {parseFloat(montantRecu) > solde && <div style={{ color: "#10b981", fontWeight: 700, fontSize: 13, marginTop: 6 }}>Monnaie à rendre : {(parseFloat(montantRecu) - solde).toFixed(2)} €</div>}
+                </div>
+              )}
+
+              {modePaiement === "virement" && settings.iban && (
+                <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontSize: 12, color: "#666", marginBottom: 6 }}>IBAN à communiquer au client :</div>
+                  <div style={{ fontFamily: "monospace", fontWeight: 800, fontSize: 14, marginBottom: 8 }}>{settings.iban}</div>
+                  <Btn variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(settings.iban)}>📋 Copier l'IBAN</Btn>
+                </div>
+              )}
+
+              {modePaiement === "cb" && settings.revolutLink && (
+                <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>QR Code Revolut — montant : {solde.toFixed(2)} €</div>
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(settings.revolutLink + "/" + solde.toFixed(2))}`} style={{ borderRadius: 10, width: 150, height: 150 }} />
+                  <div style={{ marginTop: 8 }}><a href={`${settings.revolutLink}/${solde.toFixed(2)}`} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 13 }}>Ouvrir Revolut →</a></div>
+                </div>
+              )}
+
+              {modePaiement === "paypal" && settings.paypalLink && (
+                <div style={{ background: "#e8f0fe", borderRadius: 10, padding: 12, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>QR Code PayPal — montant : {solde.toFixed(2)} €</div>
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(settings.paypalLink + "/" + solde.toFixed(2))}`} style={{ borderRadius: 10, width: 150, height: 150 }} />
+                  <div style={{ marginTop: 8 }}><a href={`${settings.paypalLink}/${solde.toFixed(2)}`} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 13 }}>Ouvrir PayPal →</a></div>
+                </div>
+              )}
+
+              <Btn variant="primary" disabled={!modePaiement} onClick={() => { setSoldeEncaisse(true); setCheckoutStep(2); }} style={{ width: "100%" }}>✅ Solde encaissé — Continuer</Btn>
+              <Btn variant="secondary" onClick={() => setCheckoutStep(2)} style={{ width: "100%", opacity: 0.7 }}>⏭️ Reporter l'encaissement</Btn>
+            </div>
+          ) : (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ color: "#10b981", fontSize: 16, fontWeight: 800, marginBottom: 12 }}>✅ Commande entièrement soldée</div>
+              <Btn variant="primary" onClick={() => setCheckoutStep(2)} style={{ width: "100%" }}>Continuer →</Btn>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ÉTAPE 2 — CAUTION */}
+      {checkoutStep === 2 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {order.caution > 0 && (
+            <div style={{ background: "#fef9c3", borderRadius: 10, padding: 12, textAlign: "center" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e" }}>CAUTION PRÉVUE</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#92400e" }}>{order.caution} €</div>
+            </div>
+          )}
+          <div style={{ fontSize: 13, fontWeight: 700 }}>Mode de caution :</div>
+          {[["cheque","📄 Chèque de caution"],["especes","💵 Espèces"],["autre","💳 Autre (PayPal, virement...)"],["aucune","⛔ Aucune caution"]].map(([k, l]) => (
+            <button key={k} onClick={() => setCautionMode(k)} style={{ padding: "12px 16px", borderRadius: 10, border: `2px solid ${cautionMode === k ? "#8b5cf6" : "#e5e7eb"}`, background: cautionMode === k ? "#f5f3ff" : "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{l}</button>
+          ))}
+
+          {cautionMode && cautionMode !== "aucune" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#666", textTransform: "uppercase" }}>
+                📸 Photos ({cautionMode === "cheque" ? "chèque + " : ""}carte d'identité) — {cautionPhotos.length}/3
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {cautionPhotos.map((p, i) => (
+                  <div key={i} style={{ position: "relative", width: 80, height: 80 }}>
+                    <img src={p.preview} style={{ width: 80, height: 80, borderRadius: 10, objectFit: "cover" }} />
+                    <button type="button" onClick={() => setCautionPhotos(prev => prev.filter((_, j) => j !== i))} style={{ position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: "50%", background: "#ef4444", color: "#fff", border: "2px solid #fff", fontWeight: 900, fontSize: 12, cursor: "pointer" }}>✕</button>
+                  </div>
+                ))}
+                {cautionPhotos.length < 3 && (
+                  <button type="button" onClick={() => cautionFileRef.current?.click()} style={{ width: 80, height: 80, borderRadius: 10, border: "1.5px dashed #9ca3af", background: "#f9fafb", cursor: "pointer", fontSize: 28, color: "#9ca3af" }}>+</button>
+                )}
+              </div>
+              <input ref={cautionFileRef} type="file" accept="image/*" capture="environment" multiple style={{ display: "none" }} onChange={e => { if (e.target.files) addCautionPhoto(e.target.files); e.target.value = ""; }} />
+              {cautionMode === "cheque" && cautionPhotos.length < 2 && <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700 }}>⚠️ Photo du chèque ET de la carte d'identité recommandées</div>}
+            </div>
+          )}
+
+          <Btn variant="primary" disabled={!cautionMode} onClick={() => setCheckoutStep(3)} style={{ width: "100%" }}>Continuer →</Btn>
+          <Btn variant="secondary" onClick={() => setCheckoutStep(1)} style={{ width: "100%" }}>← Retour</Btn>
+        </div>
+      )}
+
+      {/* ÉTAPE 3 — CONFIRMATION */}
+      {checkoutStep === 3 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ background: "#f0fdf4", borderRadius: 12, padding: 16 }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>Récapitulatif avant remise du matériel</div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><span>Solde encaissé</span><span style={{ fontWeight: 700, color: soldeEncaisse ? "#10b981" : "#f59e0b" }}>{soldeEncaisse ? `✅ ${solde.toFixed(2)} €` : `⏭️ Reporté (${solde.toFixed(2)} €)`}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><span>Caution</span><span style={{ fontWeight: 700 }}>{cautionMode === "aucune" ? "⛔ Aucune" : cautionMode === "cheque" ? "📄 Chèque" : cautionMode === "especes" ? "💵 Espèces" : cautionMode === "autre" ? "💳 Autre" : "—"}</span></div>
+            {modePaiement && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>Mode paiement</span><span style={{ fontWeight: 700 }}>{MOYEN_LABELS[modePaiement] || modePaiement}</span></div>}
+          </div>
+
+          {!soldeEncaisse && solde > 0 && (
+            <div style={{ background: "#fef9c3", border: "1.5px solid #fde68a", borderRadius: 10, padding: 12, fontSize: 13, color: "#92400e", fontWeight: 700 }}>
+              ⚠️ Le solde de {solde.toFixed(2)} € n'a pas été encaissé. Tu confirmes quand même la remise du matériel ?
+            </div>
+          )}
+          {cautionMode === "aucune" && (
+            <div style={{ background: "#fef9c3", border: "1.5px solid #fde68a", borderRadius: 10, padding: 12, fontSize: 13, color: "#92400e", fontWeight: 700 }}>
+              ⚠️ Aucune caution prise pour cette commande.
+            </div>
+          )}
+
+          <Btn variant="primary" onClick={() => setCheckoutStep(4)} style={{ width: "100%", background: "#10b981" }}>✅ Confirmer — Vérifier le matériel</Btn>
+          <Btn variant="danger" onClick={async () => { if (await askConfirm("Refuser la livraison et garder la commande en Préparée ?")) onRefuse(); }} style={{ width: "100%" }}>⛔ Refuser la livraison</Btn>
+          <Btn variant="secondary" onClick={() => setCheckoutStep(2)} style={{ width: "100%" }}>← Retour</Btn>
+        </div>
+      )}
+
+      {/* ÉTAPE 4 — MATÉRIEL (modifiable) */}
+      {checkoutStep === 4 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 13, color: "#666" }}>Vérifie et ajuste les quantités si le client change d'avis.</div>
+          {items.map((item, idx) => (
+            <div key={item.id || idx} style={{ background: "#f8f9fa", borderRadius: 10, padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 22 }}>{item.icon || "📦"}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{item.name}</div>
+                <div style={{ fontSize: 11, color: "#999" }}>{item.price} €/u</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button type="button" onClick={() => setItems(prev => prev.map((it, i) => i === idx && it.qty > 0 ? { ...it, qty: it.qty - 1 } : it).filter(it => it.qty > 0))} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#fee2e2", color: "#ef4444", fontWeight: 900, fontSize: 18, cursor: "pointer" }}>−</button>
+                <span style={{ fontWeight: 900, fontSize: 18, minWidth: 30, textAlign: "center" }}>{item.qty}</span>
+                <button type="button" onClick={() => setItems(prev => prev.map((it, i) => i === idx ? { ...it, qty: it.qty + 1 } : it))} style={{ width: 32, height: 32, borderRadius: 8, border: "none", background: "#dcfce7", color: "#10b981", fontWeight: 900, fontSize: 18, cursor: "pointer" }}>+</button>
+              </div>
+            </div>
+          ))}
+          <Btn variant="primary" onClick={() => setCheckoutStep(5)} style={{ width: "100%" }}>✅ Matériel OK — Signature</Btn>
+          <Btn variant="secondary" onClick={() => setCheckoutStep(3)} style={{ width: "100%" }}>← Retour</Btn>
+        </div>
+      )}
+
+      {/* ÉTAPE 5 — SIGNATURE */}
+      {checkoutStep === 5 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 13, color: "#666" }}>Dernière étape — signature du client avant de remettre le matériel.</div>
+          <BonCapture
+            orderId={order.id}
+            kind="livraison"
+            confirmLabel={`✅ Confirmer ${order.deliveryMode === "livraison" ? "la livraison" : "le retrait"}`}
+            onConfirm={handleFinalConfirm}
+          />
+          <Btn variant="secondary" onClick={() => setCheckoutStep(4)} style={{ width: "100%" }}>← Retour</Btn>
+        </div>
+      )}
+
+      {ConfirmUI}
+    </div>
+  );
+}
+
 function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery, onRetour, onEncaisser, onDeletePhoto }) {
   const [askConfirm, ConfirmUI] = useConfirm();
-  const [signingOrder, setSigningOrder] = useState(null); // commande en cours de signature de livraison
+  const [checkoutOrder, setCheckoutOrder] = useState(null); // commande en cours de checkout
   const [selected, setSelected] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
   const [sousTab, setSousTab] = useState("livraison");
 
+  const handleConfirmDelivery = (order, data) => {
+    onConfirmDelivery(order.id, data);
+    setCheckoutOrder(null);
+  };
+
   // Commandes confirmées uniquement (tout sauf brouillon, devis et clôturée)
-  const confirmed = orders.filter(o => !["Brouillon", "Devis", "Clôturée"].includes(o.status));
+  const confirmed = orders.filter(o => !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(o.status));
   // À traiter : phase livraison (les récupérations se gèrent dans le menu Retours).
   const aTraiter = confirmed.filter(o => o.phase !== "retour" && o.phase !== "termine")
     .sort((a, b) => (a.deliveryDate || "").localeCompare(b.deliveryDate || ""));
@@ -3777,7 +3994,7 @@ function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery
           <Btn variant="secondary" size="sm" onClick={() => setSelected(order)} style={{ flex: 1 }}><span style={{ width: 14, height: 14 }}>{I.eye}</span> Voir fiche</Btn>
           <Btn variant={copiedId === order.id ? "success" : "primary"} size="sm" onClick={() => copyFiche(order)} style={{ flex: 1 }}><span style={{ width: 14, height: 14 }}>{copiedId === order.id ? I.check : I.copy}</span>{copiedId === order.id ? "Copié !" : "Copier"}</Btn>
         </div>
-        <Btn variant="primary" size="sm" onClick={() => setSigningOrder(order)} style={{ width: "100%" }}>✅ Marquer comme {order.deliveryMode === "livraison" ? "livré" : "retiré"}</Btn>
+        <Btn variant="primary" size="sm" onClick={() => setCheckoutOrder(order)} style={{ width: "100%" }}>✅ Marquer comme {order.deliveryMode === "livraison" ? "livré" : "retiré"}</Btn>
       </Card>
     );
   };
@@ -3803,13 +4020,15 @@ function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery
         : <div style={{ textAlign: "center", padding: 60, color: "#999" }}><div style={{ fontSize: 48, marginBottom: 12 }}>{sousTab === "livraison" ? "🚚" : "🏪"}</div><div style={{ fontWeight: 700 }}>Aucun{sousTab === "livraison" ? "e livraison" : " retrait"} à préparer</div><div style={{ fontSize: 13, marginTop: 6 }}>Les récupérations se gèrent dans le menu « Retours ».</div></div>}
       <Modal open={!!selected} onClose={() => setSelected(null)} title="Fiche de livraison" wide><DeliverySheet order={selected || {}} settings={settings} onShare={onShare} stock={stock} onEncaisser={onEncaisser} onDeletePhoto={onDeletePhoto} allOrders={orders} /></Modal>
 
-      <Modal open={!!signingOrder} onClose={() => setSigningOrder(null)} title={signingOrder ? `✍️ Confirmer ${signingOrder.deliveryMode === "livraison" ? "la livraison" : "le retrait"} — ${signingOrder.clientName}` : ""}>
-        {signingOrder && (
-          <BonCapture
-            orderId={signingOrder.id}
-            kind="livraison"
-            confirmLabel={`✅ Confirmer ${signingOrder.deliveryMode === "livraison" ? "la livraison" : "le retrait"}`}
-            onConfirm={async (data) => { onConfirmDelivery(signingOrder.id, data); setSigningOrder(null); }}
+      <Modal open={!!checkoutOrder} onClose={() => setCheckoutOrder(null)} title={checkoutOrder ? `${checkoutOrder.deliveryMode === "livraison" ? "🚚 Livraison" : "🏠 Retrait"} — ${checkoutOrder.clientName}` : ""}>
+        {checkoutOrder && (
+          <DeliveryCheckout
+            order={checkoutOrder}
+            settings={settings}
+            stock={stock}
+            onConfirm={(data) => handleConfirmDelivery(checkoutOrder, data)}
+            onRefuse={() => setCheckoutOrder(null)}
+            onClose={() => setCheckoutOrder(null)}
           />
         )}
       </Modal>
@@ -4049,7 +4268,7 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
     } catch { setDriveStatus("error"); }
   };
 
-  const allTabs = [{ id: "entreprise", label: "🏢 Entreprise" }, { id: "tarifs", label: "💶 Tarifs" }, { id: "livraison", label: "🚚 Livraison" }, { id: "divers", label: "⚙️ Divers" }, { id: "notifications", label: "🔔 Notifications" }, { id: "campagnes", label: "📧 Campagnes" }, { id: "cloud", label: "☁️ Cloud" }, { id: "sauvegardes", label: "💾 Sauvegardes" }, { id: "comptes", label: "👥 Comptes" }];
+  const allTabs = [{ id: "entreprise", label: "🏢 Entreprise" }, { id: "tarifs", label: "💶 Tarifs" }, { id: "livraison", label: "🚚 Livraison" }, { id: "paiement", label: "💳 Paiement" }, { id: "divers", label: "⚙️ Divers" }, { id: "notifications", label: "🔔 Notifications" }, { id: "campagnes", label: "📧 Campagnes" }, { id: "cloud", label: "☁️ Cloud" }, { id: "sauvegardes", label: "💾 Sauvegardes" }, { id: "comptes", label: "👥 Comptes" }];
   // Un livreur n'a accès qu'aux réglages qui le concernent (activer ses propres notifications) :
   // pas la fiche entreprise, les tarifs, la sauvegarde cloud ou la gestion des comptes.
   const tabs = myRole === "livreur" ? allTabs.filter(t => t.id === "notifications") : allTabs;
@@ -4160,6 +4379,29 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
           {(stock || []).length === 0 && (
             <div style={{ fontSize: 13, color: "#999", textAlign: "center", padding: 20 }}>Aucun article trouvé — ajoute des articles dans le Stock pour configurer leurs barèmes.</div>
           )}
+        </Card>
+      )}
+
+      {tab === "paiement" && (
+        <Card>
+          <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 800 }}>💳 Moyens de paiement</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>🏦 Virement bancaire (IBAN)</div>
+              <Inp label="IBAN" value={local.iban || ""} onChange={v => setL("iban", v)} placeholder="FR76 XXXX XXXX XXXX XXXX XXXX XXX" />
+              <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>Affiché au client lors de l'encaissement par virement.</div>
+            </div>
+            <div style={{ background: "#e8f5e9", borderRadius: 10, padding: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💳 Revolut (CB / QR Code)</div>
+              <Inp label="Lien Revolut" value={local.revolutLink || ""} onChange={v => setL("revolutLink", v)} placeholder="https://revolut.me/tonnom" />
+              <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>L'app génère automatiquement un QR code avec le montant à payer.</div>
+            </div>
+            <div style={{ background: "#e8f0fe", borderRadius: 10, padding: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💙 PayPal (Entre proches — 0% de frais)</div>
+              <Inp label="Lien PayPal.me" value={local.paypalLink || ""} onChange={v => setL("paypalLink", v)} placeholder="https://paypal.me/toncompte" />
+              <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>Utilise "Envoyer à un ami" (Entre proches) pour éviter les frais de transaction.</div>
+            </div>
+          </div>
         </Card>
       )}
 
@@ -4728,10 +4970,12 @@ function AppInner() {
   // Données synchronisées avec Firestore (sauvegarde cloud automatique)
   // ✅ Nouvelle architecture : une commande = un document Firestore individuel
   // Plus de tableau monolithique → plus de conflits multi-utilisateurs
-  const [orders, setOrders] = useOrdersCollection();
-  const [stock, setStock] = useFirestoreState("stock", INITIAL_STOCK);
-  const [expenses, setExpenses] = useFirestoreState("expenses", []);
-  const [clients, setClients] = useFirestoreState("clients", []);
+  // ✅ Nouvelle architecture complète : chaque item = un document Firestore individuel
+  // Multi-utilisateurs sans conflit, temps réel natif, écriture granulaire.
+  const [orders, setOrders] = useCollectionState("orders");
+  const [stock, setStock] = useCollectionState("stock");
+  const [expenses, setExpenses] = useCollectionState("expenses");
+  const [clients, setClients] = useCollectionState("clients");
   const [settings, setSettings] = useFirestoreState("settings", DEFAULT_SETTINGS);
   const [expenseCategories, setExpenseCategories] = useFirestoreState("expenseCategories", EXPENSE_CATEGORIES);
   const [recurringExpenses, setRecurringExpenses] = useFirestoreState("recurringExpenses", []);
@@ -4831,10 +5075,30 @@ function AppInner() {
   // pour valider, plus de simple confirmation sans preuve).
   const confirmDelivery = (orderId, data) => setOrders(prev => prev.map(o => {
     if (o.id !== orderId) return o;
+    const bonData = data.bonData || {};
+    const total = orderTotal(o, settings);
     return {
-      ...o, status: "Chez le client", phase: "retour",
-      deliveryComment: data.comment, deliveryPhotos: data.photos || [], deliverySignature: data.signature || "",
-      deliverySignedBy: data.signedBy || "", deliverySignedAt: data.signedAt || "",
+      ...o,
+      status: "Chez le client",
+      phase: "retour",
+      // Matériel potentiellement modifié au moment de la livraison
+      items: data.items || o.items,
+      // Bon de livraison (signature + photos)
+      deliveryComment: bonData.comment || "",
+      deliveryPhotos: bonData.photos || [],
+      deliverySignature: bonData.signature || "",
+      deliverySignedBy: bonData.signedBy || "",
+      deliverySignedAt: bonData.signedAt || "",
+      // Encaissement
+      modePaiementSolde: data.modePaiement || "",
+      soldeEncaisse: data.soldeEncaisse || false,
+      // Si solde encaissé → mettre acompte = total
+      acompte: data.soldeEncaisse ? total : o.acompte,
+      soldeMoyen: data.soldeEncaisse ? data.modePaiement : o.soldeMoyen,
+      // Caution
+      cautionMode: data.cautionMode || "",
+      cautionPhotos: data.cautionPhotos || [],
+      cautionAt: new Date().toISOString(),
     };
   }));
 
@@ -4873,11 +5137,11 @@ function AppInner() {
   };
 
   const prepLimitNav = (() => { const d = new Date(); d.setDate(d.getDate() + 4); return d.toISOString().split("T")[0]; })();
-  const isAPreparer = (o) => !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status) && o.deliveryDate && o.deliveryDate >= TODAY && o.deliveryDate <= prepLimitNav;
+  const isAPreparer = (o) => !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée"].includes(o.status) && o.deliveryDate && o.deliveryDate >= TODAY && o.deliveryDate <= prepLimitNav;
   const filtered = useMemo(() => orders
     .filter(o => {
-      if (view === "devisEnAttente") return o.status === "Brouillon" || o.status === "Devis";
-      if (filterStatus === "Toutes" && (o.status === "Brouillon" || o.status === "Devis")) return false; // masqués par défaut, voir "Devis en attente"
+      if (view === "devisEnAttente") return o.status === "Brouillon" || o.status === "Devis" || o.status === "Non confirmé";
+      if (filterStatus === "Toutes" && (o.status === "Brouillon" || o.status === "Devis" || o.status === "Non confirmé")) return false; // masqués par défaut, voir "Devis en attente"
       return (filterStatus === "Toutes" || o.status === filterStatus);
     })
     .filter(o => ((o.clientName || "").toLowerCase().includes(searchQ.toLowerCase()) || (o.id || "").toLowerCase().includes(searchQ.toLowerCase())) && (quickFilter !== "aPreparer" || isAPreparer(o)))
@@ -4894,16 +5158,16 @@ function AppInner() {
   const aPreparerCount = useMemo(() => orders.filter(isAPreparer).length, [orders]);
   // Devis/brouillons non conclus : pas encore confirmés par le client, à part pour éviter
   // toute suppression accidentelle et la perte des coordonnées clients associées.
-  const pendingDevisCount = useMemo(() => orders.filter(o => o.status === "Brouillon" || o.status === "Devis").length, [orders]);
+  const pendingDevisCount = useMemo(() => orders.filter(o => o.status === "Brouillon" || o.status === "Devis" || o.status === "Non confirmé").length, [orders]);
   // Commandes à livrer : mode livraison, prêtes/confirmées, pas encore livrées
   const aLivrerCount = useMemo(() => orders.filter(o =>
     o.deliveryMode === "livraison" &&
-    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status)
+    !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée"].includes(o.status)
   ).length, [orders]);
   // Commandes à retirer au local : mode retrait, prêtes/confirmées, pas encore récupérées
   const aRetirerCount = useMemo(() => orders.filter(o =>
     o.deliveryMode === "retrait" &&
-    !["Brouillon", "Devis", "Chez le client", "Clôturée"].includes(o.status)
+    !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée"].includes(o.status)
   ).length, [orders]);
 
   const navItems = [
@@ -5042,7 +5306,7 @@ function AppInner() {
                 const phaseLabel = order.phase === "retour" ? "Étape 2 · Retour" : order.phase === "termine" ? "Clôturée" : "Étape 1 · Livraison";
                 const phaseColor = order.phase === "retour" ? "#c2410c" : order.phase === "termine" ? "#6b7280" : "#3b82f6";
                 const isExp = expandedOrders.has(order.id);
-                const orderShortage = !["Brouillon", "Devis", "Clôturée"].includes(order.status) ? stockShortage(order, orders, stock) : [];
+                const orderShortage = !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(order.status) ? stockShortage(order, orders, stock) : [];
                 return (
                   <Card key={order.id}>
                     {orderShortage.length > 0 && (
@@ -5065,6 +5329,7 @@ function AppInner() {
                           <div style={{ fontSize: 12, color: "#666" }}>
                             <span style={{ fontFamily: "monospace", color: "#999" }}>{order.id}</span>
                             {order.deliveryDate && <span> · 📅 {fmtD(order.deliveryDate)}</span>}
+                            {order.createdBy && <span style={{ color: "#9ca3af" }}> · ✍️ {order.createdBy.split("@")[0]}</span>}
                           </div>
                         </div>
                       </div>
@@ -5119,7 +5384,7 @@ function AppInner() {
           }}
           onAutosave={(draft) => { setOrders(prev => { const ex = prev.find(o => o.id === draft.id); return ex ? prev.map(o => o.id === draft.id ? draft : o) : [draft, ...prev]; }); }}
           onClose={() => setShowForm(false)}
-          allOrders={orders} clients={clients} settings={settings} stock={stock}
+          allOrders={orders} clients={clients} settings={settings} stock={stock} currentUserEmail={myEmail}
         />
       </Modal>
 

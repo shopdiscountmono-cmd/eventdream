@@ -127,9 +127,9 @@ function calcSubtotal(){
   Object.entries(form.items).forEach(([id,qty])=>{
     const item=stockItems.find(s=>s.id===id);
     if(!item||qty<=0)return;
-    let price=(parseFloat(item.price)||0)*qty;
-    if(form.options[id+"_washing"]&&item.cleaningPrice)(price+=(parseFloat(item.cleaningPrice)||0)*qty);
-    sub+=price;
+    const price=(parseFloat(item.price)||0)*qty;
+    const washPrice=form.options[id+"_washing"]?(parseFloat(item.cleaningPrice)||0)*qty:0;
+    sub+=price+washPrice;
   });
   return sub;
 }
@@ -219,19 +219,27 @@ function render(){
       html+=`<div style="font-size:11px;font-weight:800;color:#999;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">${cat}</div>`;
       catItems.forEach(item=>{
         const qty=form.items[item.id]||0;
-        const avail=(parseInt(item.total)||0)-(reservedQtys[item.id]||0);
-        const low=qty>0&&qty>avail;
-        html+=`<div class="item-row${low?" ":""}">
-          <div class="icon">${item.icon||"📦"}</div>
-          <div style="flex:1">
+        // Kits : disponibilité basée sur les composants (pas de total propre) → toujours disponible
+        const isKit=Array.isArray(item.components)&&item.components.length>0;
+        const avail=isKit?999:(parseInt(item.total)||0)-(reservedQtys[item.id]||0);
+        const low=qty>0&&!isKit&&qty>avail;
+        // Photo ou emoji
+        const thumb=item.imageUrl?`<img src="${item.imageUrl}" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0"/>`:`<div style="font-size:28px;width:44px;text-align:center;flex-shrink:0">${item.icon||"📦"}</div>`;
+        // Prix lavage par unité
+        const washPrice=parseFloat(item.cleaningPrice)||0;
+        html+=`<div class="item-row" style="${low?"border:1.5px solid #fbbf24;background:#fffbeb":""}">
+          ${thumb}
+          <div style="flex:1;min-width:0">
             <div class="name">${item.name}</div>
-            <div class="price">${item.price} €/u${avail>0?` · dispo: ${avail}`:` · <span style="color:#ef4444">sur demande</span>`}</div>
-            ${qty>0&&item.cleaningPrice?`<div class="opts"><label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/> 🧺 ${t("washing")} +${item.cleaningPrice}€</label></div>`:""}
+            ${avail<999&&avail<=10?`<div style="font-size:11px;color:${avail<=0?"#ef4444":"#f59e0b"}">${avail<=0?"sur demande":"⚠️ "+avail+" restant(s)"}</div>`:""}
+            ${qty>0&&washPrice>0?`<div class="opts" style="margin-top:6px"><label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/> 🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label></div>`:""}
           </div>
-          <div class="qty-ctrl">
-            <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
-            <div class="qty-val">${qty}</div>
-            <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
+          <div class="qty-ctrl" style="flex-direction:column;gap:4px;align-items:center">
+            <div style="display:flex;align-items:center;gap:6px">
+              <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
+              <input type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)" style="width:52px;padding:4px;border-radius:8px;border:1.5px solid #e5e7eb;text-align:center;font-size:16px;font-weight:900;font-family:inherit;margin:0"/>
+              <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
+            </div>
           </div>
         </div>`;
       });
@@ -248,7 +256,7 @@ function render(){
     document.getElementById("app").innerHTML=`${barHTML}
     <div class="card"><h2>📋 ${t("recap")}</h2>
       <div style="margin-bottom:10px"><strong>${form.name}</strong> · ${form.phone}${form.email?` · ${form.email}`:""}</div>
-      ${form.date?`<div style="font-size:13px;color:#666;margin-bottom:4px">📅 ${form.date}${form.returnDate?" → "+form.returnDate:""}</div>`:""}
+      ${form.date?`<div style="font-size:13px;color:#666;margin-bottom:4px">📅 ${form.date.split("-").reverse().join("/")}${form.returnDate?" → "+form.returnDate.split("-").reverse().join("/"):""}</div>`:""}
       ${form.mode==="livraison"?`<div style="font-size:13px;color:#666;margin-bottom:10px">🚚 ${form.address}</div>`:"<div style='font-size:13px;color:#666;margin-bottom:10px'>🏠 Retrait entrepôt</div>"}
       ${selItems.map(([id,qty])=>{const it=stockItems.find(s=>s.id===id);return it?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>${it.icon||"📦"} ${it.name} ×${qty}</span><span style="font-weight:700">${((parseFloat(it.price)||0)*qty).toFixed(2)} €</span></div>`:""}).join("")}
       ${form.deliveryCost>0?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>🚚 Livraison (${form.deliveryKm} km)</span><span style="font-weight:700">${form.deliveryCost.toFixed(2)} €</span></div>`:""}

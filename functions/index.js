@@ -170,8 +170,27 @@ exports.onOrderValidated = onDocumentWritten(
   async (event) => {
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
-    if (!after || after.status !== "Confirmée") return;
-    if (before && before.status === "Confirmée") return; // déjà notifié
+    if (!after) return;
+
+    // Nouveau devis créé depuis le formulaire web public
+    if (!before && after.createdBy === "web-client") {
+      const settingsSnap = await db.collection("app").doc("settings").get();
+      const settings = settingsSnap.exists ? settingsSnap.data().value : {};
+      if (settings && settings.notifyOnValidation === false) return;
+      const when = after.deliveryDate ? ` — ${fmtDateFr(after.deliveryDate)}` : "";
+      const warn = after.hasStockWarning ? " ⚠️ Vérifier le stock" : "";
+      await sendToAll(
+        "📝 Nouveau devis web",
+        `${after.clientName || "Client"}${when} · ${after.items?.length || 0} article(s)${warn}`,
+        { orderId: after.id, kind: "nouveau_devis_web" },
+        { excludeRoles: ["livreur"] }
+      );
+      return;
+    }
+
+    // Passage au statut "Confirmée"
+    if (after.status !== "Confirmée") return;
+    if (before && before.status === "Confirmée") return;
 
     // Vérifie le réglage global
     const settingsSnap = await db.collection("app").doc("settings").get();

@@ -97,6 +97,9 @@ export async function uploadQRCode(name, file) {
   await uploadBytes(r, file);
   return await getDownloadURL(r);
 }
+
+// Supprime une photo de Storage à partir de son URL de téléchargement.
+export async function deletePhoto(url) {
   try {
     await deleteObject(ref(storage, url));
   } catch (e) {

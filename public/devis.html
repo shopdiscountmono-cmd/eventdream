@@ -19,20 +19,23 @@
     .mode-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
     .mode-btn{padding:14px;border-radius:12px;border:2px solid #e5e7eb;background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center}
     .mode-btn.sel{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
+    .trajet-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+    .trajet-btn{padding:10px;border-radius:10px;border:1.5px solid #e5e7eb;background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center}
+    .trajet-btn.sel{border-color:#10b981;background:#f0fdf4;color:#065f46}
+    .liv-opt{border:1.5px solid #e5e7eb;border-radius:10px;padding:12px;margin-bottom:10px}
+    .liv-opt-header{display:flex;align-items:center;gap:8px;cursor:pointer}
+    .liv-opt-header input{width:18px;height:18px;margin:0;cursor:pointer;flex-shrink:0}
+    .liv-opt-header span{font-weight:700;font-size:14px}
     .item-row{display:flex;align-items:center;gap:10px;padding:12px;background:#f8f9fa;border-radius:10px;margin-bottom:8px}
-    .item-row .icon{font-size:22px;flex-shrink:0}
-    .item-row .name{flex:1;font-weight:700;font-size:14px}
-    .item-row .price{font-size:12px;color:#999}
+    .item-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0}
+    .item-icon{font-size:28px;width:44px;text-align:center;flex-shrink:0;line-height:44px}
     .qty-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0}
-    .qty-btn{width:32px;height:32px;border-radius:8px;border:none;font-size:18px;font-weight:900;cursor:pointer}
+    .qty-btn{width:32px;height:32px;border-radius:8px;border:none;font-size:18px;font-weight:900;cursor:pointer;flex-shrink:0}
     .qty-btn.plus{background:#dcfce7;color:#10b981}
     .qty-btn.minus{background:#fee2e2;color:#ef4444}
-    .qty-val{font-weight:900;font-size:16px;min-width:28px;text-align:center}
-    .opts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
-    .opt-cb{display:flex;align-items:center;gap:6px;font-size:12px;color:#666;cursor:pointer}
+    .qty-input{width:60px;padding:4px;border-radius:8px;border:1.5px solid #e5e7eb;text-align:center;font-size:16px;font-weight:900;font-family:inherit;margin:0}
+    .opt-cb{display:flex;align-items:center;gap:6px;font-size:12px;color:#666;cursor:pointer;margin-top:6px}
     .opt-cb input{width:16px;height:16px;margin:0;cursor:pointer}
-    .delivery-box{background:#eff6ff;border-radius:12px;padding:14px;margin-bottom:14px}
-    .delivery-price{font-size:20px;font-weight:900;color:#1d4ed8}
     .total-box{background:#f0fdf4;border-radius:12px;padding:16px;text-align:center;margin-bottom:16px}
     .total-box .lbl{font-size:11px;color:#065f46;font-weight:700;text-transform:uppercase}
     .total-box .amt{font-size:32px;font-weight:900;color:#10b981}
@@ -43,13 +46,7 @@
     .submit-btn:disabled{opacity:.4;cursor:not-allowed}
     .lang-sw{text-align:right;margin-bottom:8px}
     .lang-sw button{background:none;border:1px solid #e5e7eb;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
-    .success-box{text-align:center;padding:40px 20px}
-    .success-box .icon{font-size:60px;margin-bottom:16px}
-    .success-box h2{font-size:22px;font-weight:900;color:#10b981;margin-bottom:8px}
-    .success-box p{color:#666;font-size:14px;line-height:1.6}
     .err{color:#ef4444;font-size:13px;margin-bottom:12px;font-weight:700}
-    .hint{font-size:11px;color:#999;margin-top:-10px;margin-bottom:14px}
-    .calc-loading{font-size:12px;color:#3b82f6;margin-bottom:8px}
     .step-bar{display:flex;gap:4px;margin-bottom:20px}
     .step-bar div{flex:1;height:4px;border-radius:4px;background:#e5e7eb}
     .step-bar div.done{background:#10b981}
@@ -58,7 +55,7 @@
     .back-btn{flex:1;padding:14px;border-radius:12px;border:1.5px solid #e5e7eb;background:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;color:#666}
     .next-btn{flex:2;padding:14px;border-radius:12px;border:none;background:#1a1a2e;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
     .next-btn:disabled{opacity:.4;cursor:not-allowed}
-    .stock-warning{background:#fef9c3;border-radius:10px;padding:10px 14px;font-size:13px;color:#92400e;margin-top:8px;font-weight:600}
+    .del-info{background:#eff6ff;border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;color:#1d4ed8;font-weight:700}
   </style>
 </head>
 <body>
@@ -69,21 +66,21 @@
 </div>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import{getFirestore,doc,getDoc,collection,getDocs,addDoc,setDoc}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import{getFirestore,doc,getDoc,collection,getDocs,setDoc}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
 const db=getFirestore(initializeApp(cfg));
 const MAPS_KEY="AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU";
 let lang="fr",step=1,stockItems=[],settings={},reservedQtys={};
-let form={name:"",phone:"",email:"",address:"",mode:"retrait",date:"",returnDate:"",items:{},options:{},deliveryKm:0,deliveryMin:0,deliveryCost:0,acomptePct:30};
-const T={fr:{sub:"Demande de devis en ligne",s1:"Vos coordonnées",s2:"Date & Mode",s3:"Matériel",s4:"Récapitulatif",name:"Nom complet",phone:"Téléphone",email:"Email",address:"Adresse de livraison",mode_liv:"🚚 Livraison à domicile",mode_ret:"🏠 Retrait entrepôt",date:"Date de livraison / retrait",retDate:"Date de retour",items:"Choisissez vos articles",washing:"Option lavage",setup:"Montage/Installation",calcul:"📍 Calcul de la distance...",delivery:"🚚 Frais de livraison",recap:"Récapitulatif de votre demande",subtotal:"Sous-total",total:"Total",acompte:"Acompte à payer",p30:"30% — réservation",p100:"100% — paiement complet",submit:"✅ Envoyer ma demande",next:"Suivant →",back:"← Retour",ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande. Nous vous contacterons très rapidement pour confirmer votre devis.",stock_warn:"⚠️ Stock potentiellement insuffisant pour les quantités demandées. Votre demande sera traitée manuellement.",req:"Champs obligatoires",free_text:"Demande spéciale (articles non listés, options particulières...)",free_text_ph:"Ex: nappes rouges, décoration florale, bougeoirs..."},en:{sub:"Online Quote Request",s1:"Your details",s2:"Date & Mode",s3:"Equipment",s4:"Summary",name:"Full name",phone:"Phone",email:"Email",address:"Delivery address",mode_liv:"🚚 Home delivery",mode_ret:"🏠 Warehouse pickup",date:"Delivery / pickup date",retDate:"Return date",items:"Choose your items",washing:"Washing option",setup:"Setup/Installation",calcul:"📍 Calculating distance...",delivery:"🚚 Delivery fee",recap:"Your quote summary",subtotal:"Subtotal",total:"Total",acompte:"Deposit to pay",p30:"30% — reservation",p100:"100% — full payment",submit:"✅ Send my request",next:"Next →",back:"← Back",ok_title:"Request sent!",ok_text:"We have received your request. We will contact you shortly to confirm your quote.",stock_warn:"⚠️ Stock may be insufficient for the requested quantities. Your request will be processed manually.",req:"Required fields",free_text:"Special request (unlisted items, special options...)",free_text_ph:"Ex: red tablecloths, floral decoration, candleholders..."}};
+let form={name:"",phone:"",email:"",address:"",mode:"retrait",trajetAller:true,trajetRetour:true,date:"",returnDate:"",items:{},options:{},etageActive:false,etagePrice:0,etageNbEtages:1,miseEnPlaceActive:false,miseEnPlacePrice:0,deliveryKm:0,deliveryMin:0,deliveryCost:0,acomptePct:30,freeText:""};
+const T={fr:{sub:"Demande de devis en ligne",s1:"Vos coordonnées",s2:"Date & Mode",s3:"Matériel",s4:"Récapitulatif",name:"Nom complet",phone:"Téléphone",email:"Email",address:"Adresse de livraison",mode_liv:"🚚 Livraison à domicile",mode_ret:"🏠 Retrait entrepôt",trajet:"Trajets",aller:"Aller uniquement",allerRetour:"Aller-retour",date:"Date de livraison / retrait",retDate:"Date de retour",items:"Choisissez vos articles",washing:"Option lavage",etage:"Monter à l'étage",etageNb:"Nombre d'étages",installation:"Mise en place",calcul:"📍 Calcul en cours...",del_pied:"🚚 Livraison au pied du camion",del_etage:"🪜 Livraison + montée à l'étage",del_install:"🛠️ Livraison + installation",recap:"Récapitulatif de votre demande",total:"Total",acompte:"Acompte à payer",p30:"30% — réservation",p100:"100% — paiement complet",submit:"✅ Envoyer ma demande",next:"Suivant →",back:"← Retour",ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande. Nous vous contacterons très rapidement pour confirmer votre devis.",req:"Champs obligatoires",free_text:"Demande spéciale",free_text_ph:"Ex: nappes, décoration particulière..."},en:{sub:"Online Quote Request",s1:"Your details",s2:"Date & Mode",s3:"Equipment",s4:"Summary",name:"Full name",phone:"Phone",email:"Email",address:"Delivery address",mode_liv:"🚚 Home delivery",mode_ret:"🏠 Warehouse pickup",trajet:"Trips",aller:"One way",allerRetour:"Round trip",date:"Delivery / pickup date",retDate:"Return date",items:"Choose your items",washing:"Washing option",etage:"Floor delivery",etageNb:"Number of floors",installation:"Setup/Installation",calcul:"📍 Calculating...",del_pied:"🚚 Delivery at truck",del_etage:"🪜 Delivery + floor",del_install:"🛠️ Delivery + installation",recap:"Your quote summary",total:"Total",acompte:"Deposit to pay",p30:"30% — reservation",p100:"100% — full payment",submit:"✅ Send my request",next:"Next →",back:"← Back",ok_title:"Request sent!",ok_text:"We have received your request. We will contact you shortly.",req:"Required fields",free_text:"Special request",free_text_ph:"Ex: tablecloths, special decoration..."}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
+const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
 
 async function loadData(){
   const[stockSnap,settingsSnap]=await Promise.all([getDocs(collection(db,"stock")),getDoc(doc(db,"app","settings"))]);
   stockItems=stockSnap.docs.map(d=>({...d.data(),id:d.id})).filter(s=>s.name&&(s.price||0)>0);
   settings=settingsSnap.exists()?(settingsSnap.data().value||settingsSnap.data()||{}):{};
-  // Calcul des stocks déjà réservés (commandes actives)
   const ordersSnap=await getDocs(collection(db,"orders"));
   ordersSnap.docs.forEach(d=>{
     const o=d.data();
@@ -112,7 +109,7 @@ async function computeDistance(origin,dest){
   return null;
 }
 
-function calcDelivery(km,min){
+function calcTrajet(km,min){
   const s=settings;
   if(km<=0)return 0;
   const forfait=s.minDeliveryPrice||0;
@@ -122,82 +119,118 @@ function calcDelivery(km,min){
   return forfait+kmSup*(s.pricePerKm||0)+minSup*(s.pricePerMin||0);
 }
 
+function calcDeliveryCost(){
+  const unit=calcTrajet(form.deliveryKm,form.deliveryMin);
+  let cost=0;
+  if(form.trajetAller)cost+=unit;
+  if(form.trajetRetour)cost+=unit;
+  return cost;
+}
+
+function calcEtageAuto(){
+  const baremes=(settings.deliveryEtageBaremes)||{};
+  const totalParEtage=Object.entries(form.items).filter(([,q])=>q>0).reduce((s,[id,qty])=>{
+    const cfg=baremes[id];
+    if(!cfg||!cfg.batchSize)return s;
+    const trajets=Math.ceil(qty/(parseFloat(cfg.batchSize)||1));
+    return s+trajets*(parseFloat(cfg.price)||0);
+  },0);
+  return totalParEtage*(parseInt(form.etageNbEtages)||0);
+}
+
+function calcMiseEnPlaceAuto(){
+  const baremes=(settings.deliveryMiseEnPlaceBaremes)||{};
+  return Object.entries(form.items).filter(([,q])=>q>0).reduce((s,[id,qty])=>{
+    const cfg=baremes[id];
+    if(!cfg||!cfg.unitPrice)return s;
+    return s+(parseFloat(cfg.unitPrice)||0)*qty;
+  },0);
+}
+
 function calcSubtotal(){
-  let sub=0;
-  Object.entries(form.items).forEach(([id,qty])=>{
-    const item=stockItems.find(s=>s.id===id);
-    if(!item||qty<=0)return;
-    const price=(parseFloat(item.price)||0)*qty;
-    const washPrice=form.options[id+"_washing"]?(parseFloat(item.cleaningPrice)||0)*qty:0;
-    sub+=price+washPrice;
-  });
-  return sub;
+  return Object.entries(form.items).reduce((s,[id,qty])=>{
+    const item=stockItems.find(i=>i.id===id);
+    if(!item||qty<=0)return s;
+    const base=(parseFloat(item.price)||0)*qty;
+    const wash=form.options[id+"_washing"]?(parseFloat(item.cleaningPrice)||0)*qty:0;
+    return s+base+wash;
+  },0);
+}
+
+function calcTotal(){
+  const sub=calcSubtotal();
+  const del=form.mode==="livraison"?calcDeliveryCost():0;
+  const etage=form.etageActive?(parseFloat(form.etagePrice)||0):0;
+  const install=form.miseEnPlaceActive?(parseFloat(form.miseEnPlacePrice)||0):0;
+  return sub+del+etage+install;
+}
+
+function delLabel(){
+  if(form.miseEnPlaceActive)return t("del_install");
+  if(form.etageActive)return t("del_etage");
+  return t("del_pied");
 }
 
 let debounceTimer=null;
 function onAddressChange(val){
   form.address=val;
-  if(form.mode!=="livraison")return;
   clearTimeout(debounceTimer);
   debounceTimer=setTimeout(async()=>{
-    if(val.length<10)return;
-    const el=document.getElementById("delivery-calc");
+    if(val.length<8)return;
+    const el=document.getElementById("delivery-info");
     if(el)el.textContent=t("calcul");
     const warehouse=settings.warehouseAddress||"";
     const res=await computeDistance(warehouse,val);
     if(res){
       form.deliveryKm=res.km;form.deliveryMin=res.min;
-      const cost=calcDelivery(res.km,res.min)*2; // aller + retour
-      form.deliveryCost=cost;
-      if(el)el.textContent=`🚚 ${res.km} km — ${cost.toFixed(2)} €`;
+      form.deliveryCost=calcDeliveryCost();
+      if(el)el.textContent=`✅ Frais de livraison calculés : ${form.deliveryCost.toFixed(2)} €`;
     }else{
-      form.deliveryCost=0;
-      if(el)el.textContent="⚠️ Adresse non trouvée — les frais seront calculés manuellement.";
+      form.deliveryKm=0;form.deliveryMin=0;form.deliveryCost=0;
+      if(el)el.textContent="⚠️ Adresse non trouvée — frais calculés manuellement.";
     }
-    updateTotal();
+    updateTotals();
   },800);
 }
 
-function updateTotal(){
-  const sub=calcSubtotal();
-  const total=sub+form.deliveryCost;
+function updateTotals(){
+  const total=calcTotal();
   const el=document.getElementById("total-amt");
   if(el)el.textContent=total.toFixed(2)+" €";
-  const subEl=document.getElementById("sub-amt");
-  if(subEl)subEl.textContent=sub.toFixed(2)+" €";
-  const delEl=document.getElementById("del-amt");
-  if(delEl)delEl.textContent=form.deliveryCost.toFixed(2)+" €";
-  const acompteEl=document.getElementById("acompte-amt");
-  if(acompteEl)acompteEl.textContent=((total*form.acomptePct)/100).toFixed(2)+" €";
+  const aEl=document.getElementById("acompte-amt");
+  if(aEl)aEl.textContent=((total*form.acomptePct)/100).toFixed(2)+" €";
 }
 
 function hasStockWarning(){
   return Object.entries(form.items).some(([id,qty])=>{
     const item=stockItems.find(s=>s.id===id);
     if(!item||qty<=0)return false;
-    const avail=(parseInt(item.total)||0)-(reservedQtys[id]||0);
-    return qty>avail;
+    const isKit=Array.isArray(item.components)&&item.components.length>0;
+    if(isKit)return false;
+    return qty>(parseInt(item.total)||0)-(reservedQtys[id]||0);
   });
 }
 
 function render(){
   const steps=[t("s1"),t("s2"),t("s3"),t("s4")];
-  const barHTML=`<div class="step-bar">${steps.map((_,i)=>`<div class="${i<step-1?"done":i===step-1?"active":""}"></div>`).join("")}</div>`;
+  const bar=`<div class="step-bar">${steps.map((_,i)=>`<div class="${i<step-1?"done":i===step-1?"active":""}"></div>`).join("")}</div>`;
 
   if(step===1){
-    document.getElementById("app").innerHTML=`${barHTML}
+    document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2>👤 ${t("s1")}</h2>
       <label>${t("name")} *</label><input id="f-name" value="${form.name}" placeholder="Prénom Nom" autocomplete="off"/>
       <label>${t("phone")} *</label><input id="f-phone" type="tel" value="${form.phone}" placeholder="+33 6 XX XX XX XX" autocomplete="off"/>
       <label>${t("email")}</label><input id="f-email" type="email" value="${form.email}" placeholder="email@exemple.com" autocomplete="off"/>
-      <div id="err" class="err" style="display:none"></div>
-      <button class="next-btn" onclick="goStep1()">${t("next")}</button>
+      <div id="err1" class="err" style="display:none"></div>
+      <button class="next-btn" onclick="goStep1()" style="width:100%">${t("next")}</button>
     </div>`;
-  }else if(step===2){
-    document.getElementById("app").innerHTML=`${barHTML}
+  }
+
+  else if(step===2){
+    document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2>📅 ${t("s2")}</h2>
-      <label>${t("date")} *</label><input id="f-date" type="date" value="${form.date}" min="${new Date().toISOString().slice(0,10)}"/>
-      <label>${t("retDate")}</label><input id="f-retdate" type="date" value="${form.returnDate}" min="${form.date||new Date().toISOString().slice(0,10)}"/>
+      <label>${t("date")} *</label><input id="f-date" type="date" value="${form.date}" min="${new Date().toISOString().slice(0,10)}" style="margin-bottom:14px"/>
+      <label>${t("retDate")}</label><input id="f-retdate" type="date" value="${form.returnDate}" min="${form.date||new Date().toISOString().slice(0,10)}" style="margin-bottom:14px"/>
       <label>Mode *</label>
       <div class="mode-btns">
         <button class="mode-btn${form.mode==="livraison"?" sel":""}" onclick="setMode('livraison')">${t("mode_liv")}</button>
@@ -205,62 +238,96 @@ function render(){
       </div>
       ${form.mode==="livraison"?`
         <label>${t("address")} *</label>
-        <input id="f-addr" value="${form.address}" placeholder="3 rue de la Paix, 94800 Villejuif" autocomplete="off" oninput="onAddrChange(this.value)"/>
-        <div id="delivery-calc" class="calc-loading">${form.deliveryCost>0?`🚚 ${form.deliveryKm} km — ${form.deliveryCost.toFixed(2)} €`:""}</div>
+        <input id="f-addr" value="${form.address}" placeholder="19 rue de la Paix, 94800 Villejuif" autocomplete="off" oninput="onAddressChange(this.value)" style="margin-bottom:6px"/>
+        <div id="delivery-info" style="font-size:12px;color:#3b82f6;margin-bottom:14px;font-weight:700">${form.deliveryKm>0?`✅ Frais de livraison calculés : ${calcDeliveryCost().toFixed(2)} €`:""}</div>
+        <label>${t("trajet")}</label>
+        <div class="trajet-btns">
+          <button class="trajet-btn${form.trajetAller&&!form.trajetRetour?" sel":""}" onclick="setTrajet(true,false)">${t("aller")}</button>
+          <button class="trajet-btn${form.trajetAller&&form.trajetRetour?" sel":""}" onclick="setTrajet(true,true)">${t("allerRetour")}</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+          <div class="liv-opt">
+            <label class="liv-opt-header"><input type="checkbox" ${form.etageActive?"checked":""} onchange="setEtage(this.checked)"/><span>🪜 ${t("etage")}</span></label>
+            ${form.etageActive?`<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:13px;color:#666">${t("etageNb")}</span>
+                <input type="number" min="1" value="${form.etageNbEtages}" onchange="setEtageNb(this.value)" style="width:60px;margin:0;padding:8px"/>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:13px;color:#666">Prix (€)</span>
+                <input type="number" min="0" step="0.5" value="${form.etagePrice}" onchange="form.etagePrice=parseFloat(this.value)||0;updateTotals()" style="width:80px;margin:0;padding:8px"/>
+                <span style="font-size:11px;color:#999">Calculé auto : ${calcEtageAuto().toFixed(2)} €</span>
+              </div>
+            </div>`:""}
+          </div>
+          <div class="liv-opt">
+            <label class="liv-opt-header"><input type="checkbox" ${form.miseEnPlaceActive?"checked":""} onchange="setInstall(this.checked)"/><span>🛠️ ${t("installation")}</span></label>
+            ${form.miseEnPlaceActive?`<div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <span style="font-size:13px;color:#666">Prix (€)</span>
+              <input type="number" min="0" step="0.5" value="${form.miseEnPlacePrice}" onchange="form.miseEnPlacePrice=parseFloat(this.value)||0;updateTotals()" style="width:80px;margin:0;padding:8px"/>
+              <span style="font-size:11px;color:#999">Calculé auto : ${calcMiseEnPlaceAuto().toFixed(2)} €</span>
+            </div>`:""}
+          </div>
+        </div>
       `:""}
-      <div id="err2" class="err" style="display:none"></div>
+      <div id="err2" class="err" style="display:none;margin-top:10px"></div>
       <div class="nav-btns"><button class="back-btn" onclick="step=1;render()">${t("back")}</button><button class="next-btn" onclick="goStep2()">${t("next")}</button></div>
     </div>`;
-  }else if(step===3){
+  }
+
+  else if(step===3){
     const cats=[...new Set(stockItems.map(s=>s.category).filter(Boolean))].sort();
-    let html=`${barHTML}<div class="card"><h2>📦 ${t("items")}</h2>`;
+    let html=`${bar}<div class="card"><h2>📦 ${t("items")}</h2>`;
     cats.forEach(cat=>{
       const catItems=stockItems.filter(s=>s.category===cat);
       html+=`<div style="font-size:11px;font-weight:800;color:#999;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">${cat}</div>`;
       catItems.forEach(item=>{
         const qty=form.items[item.id]||0;
-        // Kits : disponibilité basée sur les composants (pas de total propre) → toujours disponible
         const isKit=Array.isArray(item.components)&&item.components.length>0;
-        const avail=isKit?999:(parseInt(item.total)||0)-(reservedQtys[item.id]||0);
-        const low=qty>0&&!isKit&&qty>avail;
-        // Photo ou emoji
-        const thumb=item.imageUrl?`<img src="${item.imageUrl}" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0"/>`:`<div style="font-size:28px;width:44px;text-align:center;flex-shrink:0">${item.icon||"📦"}</div>`;
-        // Prix lavage par unité
+        const thumb=item.imageUrl?`<img src="${item.imageUrl}" class="item-thumb"/>`:`<div class="item-icon">${item.icon||"📦"}</div>`;
         const washPrice=parseFloat(item.cleaningPrice)||0;
-        html+=`<div class="item-row" style="${low?"border:1.5px solid #fbbf24;background:#fffbeb":""}">
+        html+=`<div class="item-row">
           ${thumb}
           <div style="flex:1;min-width:0">
-            <div class="name">${item.name}</div>
-            ${avail<999&&avail<=10?`<div style="font-size:11px;color:${avail<=0?"#ef4444":"#f59e0b"}">${avail<=0?"sur demande":"⚠️ "+avail+" restant(s)"}</div>`:""}
-            ${qty>0&&washPrice>0?`<div class="opts" style="margin-top:6px"><label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/> 🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label></div>`:""}
+            <div style="font-weight:700;font-size:14px">${item.name}</div>
+            ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/> 🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
           </div>
-          <div class="qty-ctrl" style="flex-direction:column;gap:4px;align-items:center">
-            <div style="display:flex;align-items:center;gap:6px">
-              <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
-              <input type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)" style="width:52px;padding:4px;border-radius:8px;border:1.5px solid #e5e7eb;text-align:center;font-size:16px;font-weight:900;font-family:inherit;margin:0"/>
-              <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
-            </div>
+          <div class="qty-ctrl">
+            <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
+            <input class="qty-input" type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)"/>
+            <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
           </div>
         </div>`;
       });
     });
     html+=`<div style="margin-top:14px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" style="resize:vertical">${form.freeText||""}</textarea></div>`;
-    if(hasStockWarning())html+=`<div class="stock-warning">${t("stock_warn")}</div>`;
     html+=`<div class="nav-btns"><button class="back-btn" onclick="step=2;render()">${t("back")}</button><button class="next-btn" onclick="goStep3()">${t("next")}</button></div></div>`;
     document.getElementById("app").innerHTML=html;
-    updateTotal();
-  }else if(step===4){
-    const sub=calcSubtotal(),total=sub+form.deliveryCost;
+  }
+
+  else if(step===4){
+    const total=calcTotal(),sub=calcSubtotal();
+    const del=form.mode==="livraison"?calcDeliveryCost():0;
+    const etage=form.etageActive?(parseFloat(form.etagePrice)||0):0;
+    const install=form.miseEnPlaceActive?(parseFloat(form.miseEnPlacePrice)||0):0;
     const acompte=(total*form.acomptePct/100).toFixed(2);
     const selItems=Object.entries(form.items).filter(([,q])=>q>0);
-    document.getElementById("app").innerHTML=`${barHTML}
+    document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2>📋 ${t("recap")}</h2>
       <div style="margin-bottom:10px"><strong>${form.name}</strong> · ${form.phone}${form.email?` · ${form.email}`:""}</div>
-      ${form.date?`<div style="font-size:13px;color:#666;margin-bottom:4px">📅 ${form.date.split("-").reverse().join("/")}${form.returnDate?" → "+form.returnDate.split("-").reverse().join("/"):""}</div>`:""}
-      ${form.mode==="livraison"?`<div style="font-size:13px;color:#666;margin-bottom:10px">🚚 ${form.address}</div>`:"<div style='font-size:13px;color:#666;margin-bottom:10px'>🏠 Retrait entrepôt</div>"}
-      ${selItems.map(([id,qty])=>{const it=stockItems.find(s=>s.id===id);return it?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>${it.icon||"📦"} ${it.name} ×${qty}</span><span style="font-weight:700">${((parseFloat(it.price)||0)*qty).toFixed(2)} €</span></div>`:""}).join("")}
-      ${form.deliveryCost>0?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>🚚 Livraison (${form.deliveryKm} km)</span><span style="font-weight:700">${form.deliveryCost.toFixed(2)} €</span></div>`:""}
-      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:16px"><span><strong>Total</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div>
+      ${form.date?`<div style="font-size:13px;color:#666;margin-bottom:4px">📅 ${fmtD(form.date)}${form.returnDate?" → "+fmtD(form.returnDate):""}</div>`:""}
+      <div style="font-size:13px;color:#666;margin-bottom:10px">${form.mode==="livraison"?`🚚 ${form.address}`:"🏠 Retrait entrepôt"}</div>
+      ${selItems.map(([id,qty])=>{
+        const it=stockItems.find(s=>s.id===id);
+        if(!it)return"";
+        const wash=form.options[id+"_washing"]?(parseFloat(it.cleaningPrice)||0)*qty:0;
+        const total_item=((parseFloat(it.price)||0)*qty)+wash;
+        return`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>${it.icon||"📦"} ${it.name} ×${qty}${wash>0?" + lavage":""}</span><span style="font-weight:700">${total_item.toFixed(2)} €</span></div>`;
+      }).join("")}
+      ${del>0?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>${delLabel()}</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}
+      ${etage>0?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>🪜 Montée à l'étage (${form.etageNbEtages} étage${form.etageNbEtages>1?"s":""})</span><span style="font-weight:700">${etage.toFixed(2)} €</span></div>`:""}
+      ${install>0?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>🛠️ Mise en place</span><span style="font-weight:700">${install.toFixed(2)} €</span></div>`:""}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:16px"><span><strong>${t("total")}</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div>
       ${form.freeText?`<div style="background:#fef9c3;border-radius:8px;padding:10px;font-size:13px;margin-top:8px">📝 ${form.freeText}</div>`:""}
     </div>
     <div class="card"><h2>💰 ${t("acompte")}</h2>
@@ -268,32 +335,35 @@ function render(){
         <button class="acompte-btn${form.acomptePct===30?" sel":""}" onclick="setPct(30)">30% — ${(total*.3).toFixed(2)} €</button>
         <button class="acompte-btn${form.acomptePct===100?" sel":""}" onclick="setPct(100)">100% — ${total.toFixed(2)} €</button>
       </div>
-      <div style="text-align:center;font-size:12px;color:#999">Acompte demandé : <strong>${acompte} €</strong> — vous recevrez les instructions de paiement par message.</div>
+      <div style="text-align:center;font-size:12px;color:#999">Acompte : <strong>${acompte} €</strong> — vous recevrez les instructions de paiement par message.</div>
     </div>
     <div id="err4" class="err" style="display:none"></div>
     <button class="submit-btn" id="submit-btn" onclick="submitForm()">${t("submit")}</button>
-    <div class="nav-btns" style="margin-top:10px"><button class="back-btn" onclick="step=3;render()">${t("back")}</button></div>`;
+    <div class="nav-btns" style="margin-top:10px"><button class="back-btn" style="width:100%" onclick="step=3;render()">${t("back")}</button></div>`;
   }
 }
 
-window.setMode=m=>{form.mode=m;if(m==="retrait"){form.deliveryCost=0;form.deliveryKm=0;}render()};
+window.setMode=m=>{form.mode=m;if(m==="retrait"){form.deliveryCost=0;form.deliveryKm=0;form.etageActive=false;form.miseEnPlaceActive=false;}render()};
+window.setTrajet=(a,r)=>{form.trajetAller=a;form.trajetRetour=r;form.deliveryCost=calcDeliveryCost();updateTotals();render()};
+window.setEtage=v=>{form.etageActive=v;if(v){form.etagePrice=calcEtageAuto();if(form.miseEnPlaceActive){form.miseEnPlacePrice=calcMiseEnPlaceAuto();}}render()};
+window.setEtageNb=v=>{form.etageNbEtages=parseInt(v)||1;form.etagePrice=calcEtageAuto();render()};
+window.setInstall=v=>{form.miseEnPlaceActive=v;if(v){form.miseEnPlacePrice=calcMiseEnPlaceAuto();form.etageActive=true;form.etagePrice=calcEtageAuto();}render()};
 window.setQty=(id,qty)=>{form.items[id]=Math.max(0,qty);render()};
-window.toggleOpt=(key,val)=>{form.options[key]=val;updateTotal()};
+window.toggleOpt=(key,val)=>{form.options[key]=val;render()};
 window.setPct=p=>{form.acomptePct=p;render()};
-window.onAddrChange=v=>onAddressChange(v);
 
 window.goStep1=()=>{
   form.name=document.getElementById("f-name")?.value||"";
   form.phone=document.getElementById("f-phone")?.value||"";
   form.email=document.getElementById("f-email")?.value||"";
-  const err=document.getElementById("err");
+  const err=document.getElementById("err1");
   if(!form.name.trim()||!form.phone.trim()){err.textContent=t("req");err.style.display="block";return;}
   step=2;render();
 };
 window.goStep2=()=>{
   form.date=document.getElementById("f-date")?.value||"";
   form.returnDate=document.getElementById("f-retdate")?.value||"";
-  if(form.mode==="livraison")form.address=document.getElementById("f-addr")?.value||"";
+  if(form.mode==="livraison")form.address=document.getElementById("f-addr")?.value||form.address;
   const err=document.getElementById("err2");
   if(!form.date){err.textContent=t("req");err.style.display="block";return;}
   if(form.mode==="livraison"&&!form.address.trim()){err.textContent=t("req");err.style.display="block";return;}
@@ -302,7 +372,7 @@ window.goStep2=()=>{
 window.goStep3=()=>{
   form.freeText=document.getElementById("f-free")?.value||"";
   const hasItems=Object.values(form.items).some(q=>q>0)||form.freeText.trim();
-  if(!hasItems){alert(lang==="fr"?"Veuillez sélectionner au moins un article ou saisir une demande.":"Please select at least one item or enter a request.");return;}
+  if(!hasItems){alert(lang==="fr"?"Veuillez sélectionner au moins un article.":"Please select at least one item.");return;}
   step=4;render();
 };
 
@@ -310,15 +380,29 @@ window.submitForm=async()=>{
   const btn=document.getElementById("submit-btn");
   btn.disabled=true;btn.textContent="⏳...";
   try{
-    const sub=calcSubtotal(),total=sub+form.deliveryCost;
+    const total=calcTotal();
     const id="web-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,6);
     const items=Object.entries(form.items).filter(([,q])=>q>0).map(([itemId,qty])=>{
       const it=stockItems.find(s=>s.id===itemId);
       return{id:itemId,name:it?.name||itemId,icon:it?.icon||"📦",qty,price:parseFloat(it?.price)||0,category:it?.category||"",cleaningSelected:!!form.options[itemId+"_washing"],cleaningPrice:parseFloat(it?.cleaningPrice)||0};
     });
-    const orderData={id,status:"Non confirmé",phase:"livraison",clientName:form.name,clientPhone:form.phone,clientEmail:form.email,address:form.address,deliveryMode:form.mode,deliveryDate:form.date,returnDate:form.returnDate,deliveryKm:form.deliveryKm,deliveryMin:form.deliveryMin,deliveryPriceManual:form.deliveryCost>0?String(form.deliveryCost):"",items,freeTextRequest:form.freeText||"",acompte:0,acomptePct:form.acomptePct,notes:form.freeText||"",createdAt:new Date().toISOString(),createdBy:"web-client",hasStockWarning:hasStockWarning(),stockWarning:hasStockWarning()};
-    await setDoc(doc(db,"orders",id),orderData);
-    document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;
+    const deliveryPriceTotal=(form.mode==="livraison"?calcDeliveryCost():0)+(form.etageActive?parseFloat(form.etagePrice)||0:0)+(form.miseEnPlaceActive?parseFloat(form.miseEnPlacePrice)||0:0);
+    await setDoc(doc(db,"orders",id),{
+      id,status:"Non confirmé",phase:"livraison",
+      clientName:form.name,clientPhone:form.phone,clientEmail:form.email,
+      address:form.address,deliveryMode:form.mode,
+      trajetAller:form.trajetAller,trajetRetour:form.trajetRetour,
+      deliveryDate:form.date,returnDate:form.returnDate,
+      deliveryKm:form.deliveryKm,deliveryMin:form.deliveryMin,
+      deliveryPriceManual:deliveryPriceTotal>0?String(deliveryPriceTotal):"",
+      etageActive:form.etageActive,etagePrice:form.etagePrice,etageNbEtages:form.etageNbEtages,
+      miseEnPlaceActive:form.miseEnPlaceActive,miseEnPlacePrice:form.miseEnPlacePrice,
+      items,freeTextRequest:form.freeText||"",notes:form.freeText||"",
+      acompte:0,acomptePct:form.acomptePct,
+      createdAt:new Date().toISOString(),createdBy:"web-client",
+      hasStockWarning:hasStockWarning()
+    });
+    document.getElementById("app").innerHTML=`<div class="card" style="text-align:center;padding:40px 20px"><div style="font-size:60px;margin-bottom:16px">🎉</div><h2 style="font-size:22px;font-weight:900;color:#10b981;margin-bottom:8px">${t("ok_title")}</h2><p style="color:#666;font-size:14px;line-height:1.6">${t("ok_text")}</p></div>`;
   }catch(e){
     btn.disabled=false;btn.textContent=t("submit");
     document.getElementById("err4").textContent="Erreur : "+e.message;

@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.37.4 — paiement déclaré par client en attente validation manuelle + mention légale + alerte confirmation (14/07/2026)";
+const APP_VERSION = "v3.38.0 — devis.html refonte complète + 3 sections devisEnAttente + photo/type stock + lien paiement confirm.html (30/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -2781,7 +2781,23 @@ function StockView({ orders, stock, setStock }) {
                   <tr style={{ borderTop: "1px solid #f0f0f0", background: alerte ? "#fff7ed" : idx % 2 === 0 ? "#fff" : "#fafafa" }}>
                     <td style={{ padding: "12px 16px" }}>
                       {isEd ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <div style={{ display: "flex", gap: 6 }}><input value={editForm.icon} onChange={e => setEditForm(f => ({ ...f, icon: e.target.value }))} style={{ width: 36, padding: "4px", borderRadius: 6, border: "1.5px solid #e5e7eb", textAlign: "center" }} /><input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 13 }} /></div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                            <input value={editForm.icon} onChange={e => setEditForm(f => ({ ...f, icon: e.target.value }))} style={{ width: 36, padding: "4px", borderRadius: 6, border: "1.5px solid #e5e7eb", textAlign: "center" }} />
+                            <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} style={{ flex: 1, padding: "4px 8px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 13 }} />
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                            {editForm.imageUrl && <img src={editForm.imageUrl} style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" }} />}
+                            <QRUploadButton label="📷 Photo" onUploaded={url => setEditForm(f => ({ ...f, imageUrl: url }))} name={`stock_edit_${editItem}`} />
+                            {editForm.imageUrl && <Btn variant="secondary" size="sm" onClick={() => setEditForm(f => ({ ...f, imageUrl: "" }))}>🗑️</Btn>}
+                          </div>
+                          <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                              <input type="checkbox" checked={editForm.typeLocation !== false} onChange={e => setEditForm(f => ({ ...f, typeLocation: e.target.checked }))} style={{ width: 16, height: 16 }} />🔄 Location
+                            </label>
+                            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                              <input type="checkbox" checked={!!editForm.typeVente} onChange={e => setEditForm(f => ({ ...f, typeVente: e.target.checked }))} style={{ width: 16, height: 16 }} />🛒 Vente
+                            </label>
+                          </div>
                           <select value={editForm.category || ""} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} style={{ padding: "4px 8px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 12, fontFamily: "inherit", background: "#fff" }}>
                             {[...new Set([...stock.map(s => s.category), "Chaises", "Tables", "Vaisselle", "Linge", "Équipements", "Kits"])].filter(Boolean).map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
@@ -2869,6 +2885,24 @@ function StockView({ orders, stock, setStock }) {
           <div style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: 10 }}>
             <Inp label="Icône" value={newItem.icon} onChange={v => setNewItem(f => ({ ...f, icon: v }))} />
             <Inp label="Nom" value={newItem.name} onChange={v => setNewItem(f => ({ ...f, name: v }))} required />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#666", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 6 }}>Photo de l'article (optionnelle)</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {newItem.imageUrl && <img src={newItem.imageUrl} style={{ width: 60, height: 60, borderRadius: 10, objectFit: "cover" }} />}
+              <QRUploadButton label="📷 Ajouter une photo" onUploaded={url => setNewItem(f => ({ ...f, imageUrl: url }))} name={`stock_${Date.now()}`} />
+              {newItem.imageUrl && <Btn variant="secondary" size="sm" onClick={() => setNewItem(f => ({ ...f, imageUrl: "" }))}>🗑️</Btn>}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+              <input type="checkbox" checked={newItem.typeLocation !== false} onChange={e => setNewItem(f => ({ ...f, typeLocation: e.target.checked }))} style={{ width: 18, height: 18 }} />
+              🔄 Location
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+              <input type="checkbox" checked={!!newItem.typeVente} onChange={e => setNewItem(f => ({ ...f, typeVente: e.target.checked }))} style={{ width: 18, height: 18 }} />
+              🛒 Vente
+            </label>
           </div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#666", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 6 }}>Choisir une icône</div>
@@ -5352,11 +5386,21 @@ function AppInner() {
 
           {(view === "orders" || view === "devisEnAttente") && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {view === "devisEnAttente" && (
-                <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#92400e" }}>
-                  📝 Devis et brouillons pas encore confirmés par le client — gardés à part pour ne jamais les supprimer par erreur ni perdre les coordonnées saisies (nom, téléphone, email...).
-                </div>
-              )}
+              {view === "devisEnAttente" && (() => {
+                const webDemandes = filtered.filter(o => o.createdBy === "web-client");
+                const manuelDevis = filtered.filter(o => o.createdBy !== "web-client" && (o.status === "Devis" || o.status === "Non confirmé"));
+                const brouillons = filtered.filter(o => o.createdBy !== "web-client" && o.status === "Brouillon");
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {webDemandes.length > 0 && <div style={{ fontSize: 12, fontWeight: 900, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em" }}>📱 Demandes clients web ({webDemandes.length})</div>}
+                    {webDemandes.length > 0 && <div style={{ borderBottom: "2px solid #e9d5ff", marginBottom: 6 }} />}
+                    {manuelDevis.length > 0 && webDemandes.length > 0 && <div style={{ fontSize: 12, fontWeight: 900, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 8 }}>📝 Devis manuels ({manuelDevis.length})</div>}
+                    {manuelDevis.length > 0 && webDemandes.length > 0 && <div style={{ borderBottom: "2px solid #bfdbfe", marginBottom: 6 }} />}
+                    {brouillons.length > 0 && (webDemandes.length > 0 || manuelDevis.length > 0) && <div style={{ fontSize: 12, fontWeight: 900, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 8 }}>✏️ Brouillons ({brouillons.length})</div>}
+                    {brouillons.length > 0 && (webDemandes.length > 0 || manuelDevis.length > 0) && <div style={{ borderBottom: "2px solid #e5e7eb", marginBottom: 6 }} />}
+                  </div>
+                );
+              })()}
               {quickFilter === "aPreparer" && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#f5f3ff", border: "1.5px solid #c4b5fd", borderRadius: 10, padding: "10px 14px" }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "#6d28d9" }}>🔄 Filtre actif : commandes à préparer (départ dans les 4 jours)</span>

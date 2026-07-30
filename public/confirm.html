@@ -54,7 +54,7 @@ import{getFirestore,doc,getDoc,updateDoc}from"https://www.gstatic.com/firebasejs
 const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
 const db=getFirestore(initializeApp(cfg));
 let lang="fr",order=null,settings=null,pct=30,method="revolut";
-const T={fr:{sub:"Confirmation de votre devis",title:"Votre devis",items:"Articles",total:"Total",date:"Date",ret:"Retour",mode_liv:"🚚 Livraison",mode_ret:"🏠 Retrait entrepôt",choose:"Choisir le montant à payer",p30:"30% d'acompte — réservation",p100:"100% — paiement complet",pay:"Payer avec",scan:"Scannez ce QR code pour payer",amt:"Montant :",iban:"IBAN",copy:"📋 Copier l'IBAN",btn:"✅ J'ai effectué le paiement",ok_title:"Merci pour votre confirmation !",ok_text:"Votre devis est confirmé. À très bientôt !",err:"Devis introuvable.",already:"Ce devis a déjà été confirmé. Merci !",cond:"En confirmant, vous acceptez les conditions générales de location."},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",ok_title:"Thank you!",ok_text:"Your quote is confirmed. See you soon!",err:"Quote not found.",already:"This quote is already confirmed. Thank you!",cond:"By confirming, you agree to the rental terms."}};
+const T={fr:{sub:"Confirmation de votre devis",title:"Votre devis",items:"Articles",total:"Total",date:"Date",ret:"Retour",mode_liv:"🚚 Livraison",mode_ret:"🏠 Retrait entrepôt",choose:"Choisir le montant à payer",p30:"30% d'acompte — réservation",p100:"100% — paiement complet",pay:"Payer avec",scan:"Scannez ce QR code pour payer",amt:"Montant :",iban:"IBAN",copy:"📋 Copier l'IBAN",btn:"✅ J'ai effectué le paiement",legal:"En cliquant, je confirme avoir effectué le paiement du montant indiqué. Le devis sera validé après réception et vérification du paiement par EventDream.",ok_title:"Merci pour votre déclaration de paiement !",ok_text:"Votre paiement est en cours de vérification. Vous recevrez une confirmation dès que nous aurons reçu votre règlement. À très bientôt !",err:"Devis introuvable.",already:"Votre paiement est en cours de vérification. Merci !",cond:"En confirmant, vous acceptez les conditions générales de location."},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",legal:"By clicking, I confirm having made the payment of the indicated amount. The quote will be validated after receipt and verification of your payment by EventDream.",ok_title:"Thank you for your payment declaration!",ok_text:"Your payment is being verified. You will receive a confirmation once we have received your payment. See you soon!",err:"Quote not found.",already:"Your payment is being verified. Thank you!",cond:"By confirming, you agree to the rental terms."}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
@@ -80,7 +80,7 @@ function render(){
     <div class="header"><div class="lbl">${t("title")}</div><div class="id">${order.id}</div><div class="client">${order.clientName}</div></div>
     <div class="card"><h2>📋 ${t("items")}</h2>${items}${disc>0?`<div class="row"><span style="color:#666">Remise</span><span style="font-weight:700;color:#10b981">−${disc.toFixed(2)} €</span></div>`:""}${del>0?`<div class="row"><span style="color:#666">🚚 Livraison</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}<div class="row" style="font-size:16px"><span><strong>${t("total")}</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div><div class="row"><span style="color:#666">${t("date")}</span><span style="font-weight:700">${fmtD(order.deliveryDate)}</span></div>${order.returnDate?`<div class="row"><span style="color:#666">${t("ret")}</span><span style="font-weight:700">${fmtD(order.returnDate)}</span></div>`:""}<div class="row"><span style="color:#666">Mode</span><span style="font-weight:700">${order.deliveryMode==="livraison"?t("mode_liv"):t("mode_ret")}</span></div></div>
     <div class="card"><h2>💰 ${t("choose")}</h2><button class="choice-btn${pct===30?" sel":""}" onclick="setPct(30)">30% — ${(total*.3).toFixed(2)} € (${t("p30")})</button><button class="choice-btn${pct===100?" sel":""}" onclick="setPct(100)">100% — ${total.toFixed(2)} € (${t("p100")})</button></div>
-    <div class="card"><h2>💳 ${t("pay")}</h2>${tabs}<div class="total-box"><div class="lbl">${t("amt")}</div><div class="amt">${acompte.toFixed(2)} €</div></div>${qr}<button class="pay-btn" onclick="doConfirm()">${t("btn")}</button></div>
+    <div class="card"><h2>💳 ${t("pay")}</h2>${tabs}<div class="total-box"><div class="lbl">${t("amt")}</div><div class="amt">${acompte.toFixed(2)} €</div></div>${qr}<div style="background:#fef9c3;border-radius:10px;padding:12px;font-size:12px;color:#92400e;margin-top:12px;line-height:1.5">${t("legal")}</div><button class="pay-btn" onclick="doConfirm()">${t("btn")}</button></div>
     <p class="cond">${t("cond")}</p>`;
 }
 window.setPct=p=>{pct=p;render()};
@@ -89,8 +89,15 @@ window.doConfirm=async()=>{
   if(!order)return;
   try{
     const total=calcTotal(order),acompte=Math.round(total*pct)/100;
-    await updateDoc(doc(db,"orders",order.id),{status:"Confirmée",phase:"livraison",acompte,acompteMoyen:method,confirmedByClient:true,confirmedAt:new Date().toISOString()});
-    document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;
+    await updateDoc(doc(db,"orders",order.id),{
+      paymentDeclaredByClient:true,
+      paymentDeclaredAt:new Date().toISOString(),
+      paymentMethod:method,
+      acompte,
+      acompteMoyen:method,
+      // Statut reste "Non confirmé" — Said doit valider manuellement après vérification du paiement
+    });
+    document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">⏳</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;
   }catch(e){alert("Erreur : "+e.message);}
 };
 (async()=>{

@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.37.2 — page confirmation client + paiement acompte en ligne (WhatsApp/SMS/lien) (14/07/2026)";
+const APP_VERSION = "v3.37.4 — paiement déclaré par client en attente validation manuelle + mention légale + alerte confirmation (14/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -5235,6 +5235,7 @@ function AppInner() {
   // Devis/brouillons non conclus : pas encore confirmés par le client, à part pour éviter
   // toute suppression accidentelle et la perte des coordonnées clients associées.
   const pendingDevisCount = useMemo(() => orders.filter(o => o.status === "Brouillon" || o.status === "Devis" || o.status === "Non confirmé").length, [orders]);
+  const pendingPaymentCount = useMemo(() => orders.filter(o => o.paymentDeclaredByClient && o.status === "Non confirmé").length, [orders]);
   // Commandes à livrer : mode livraison, prêtes/confirmées, pas encore livrées
   const aLivrerCount = useMemo(() => orders.filter(o =>
     o.deliveryMode === "livraison" &&
@@ -5436,6 +5437,35 @@ function AppInner() {
                         <Btn variant="danger" size="sm" onClick={() => deleteOrder(order.id)}><span style={{ width: 14, height: 14 }}>{I.trash}</span></Btn>
                       </div>
                     </div>
+                    {(order.status === "Non confirmé" || order.status === "Devis" || order.status === "Brouillon") && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                        {order.paymentDeclaredByClient && (
+                          <div style={{ background: "#fef9c3", border: "1.5px solid #fde68a", borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: "#92400e" }}>💰 Paiement déclaré par le client</div>
+                              <div style={{ fontSize: 11, color: "#92400e" }}>Vérifie sur {order.acompteMoyen || "PayPal/Revolut"} avant de confirmer</div>
+                            </div>
+                            <Btn variant="primary" size="sm" onClick={() => updateStatus(order.id, "Confirmée")} style={{ background: "#10b981", flexShrink: 0 }}>✅ Confirmer</Btn>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <Btn variant="secondary" size="sm" onClick={() => {
+                            const link = `${window.location.origin}/confirm.html?id=${order.id}`;
+                            const msg = `Bonjour ${order.clientName},\n\nVoici votre devis EventDream :\n${link}\n\nVous pouvez confirmer et payer votre acompte directement via ce lien. À bientôt !`;
+                            window.open(`https://wa.me/${(order.clientPhone||"").replace(/[\s\-\.\+]/g,"")}?text=${encodeURIComponent(msg)}`);
+                          }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
+                          <Btn variant="secondary" size="sm" onClick={() => {
+                            const link = `${window.location.origin}/confirm.html?id=${order.id}`;
+                            const msg = `Bonjour ${order.clientName}, voici votre devis EventDream : ${link}`;
+                            window.open(`sms:${order.clientPhone}?&body=${encodeURIComponent(msg)}`);
+                          }} style={{ flex: 1 }}>📱 SMS</Btn>
+                          <Btn variant="secondary" size="sm" onClick={() => {
+                            const link = `${window.location.origin}/confirm.html?id=${order.id}`;
+                            navigator.clipboard.writeText(link);
+                          }} style={{ flex: 1 }}>📋 Copier</Btn>
+                        </div>
+                      </div>
+                    )}
                     </>)}
                   </Card>
                 );

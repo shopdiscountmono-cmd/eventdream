@@ -89,9 +89,14 @@ export async function uploadPhoto(orderId, kind, file, index) {
   return await getDownloadURL(r);
 }
 
-// Supprime une photo de Storage à partir de son URL de téléchargement (suppression manuelle
-// depuis l'app). Ignore silencieusement si le fichier n'existe déjà plus.
-export async function deletePhoto(url) {
+// Upload d'un QR code (image fixe stockée dans Storage, référencée dans settings).
+export async function uploadQRCode(name, file) {
+  const ext = (file.type && file.type.split("/")[1]) || "png";
+  const path = `qrcodes/${name}_${Date.now()}.${ext}`;
+  const r = ref(storage, path);
+  await uploadBytes(r, file);
+  return await getDownloadURL(r);
+}
   try {
     await deleteObject(ref(storage, url));
   } catch (e) {

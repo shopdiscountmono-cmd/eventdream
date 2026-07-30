@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot, collection, writeBatch, deleteDoc, getDocs, query, orderBy } from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
+import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, uploadQRCode, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.37.0 — flux livraison complet (encaissement+caution+confirmation+matériel+signature) + statut Non confirmé + créateur du devis + réglages paiement (IBAN/Revolut/PayPal) (14/07/2026)";
+const APP_VERSION = "v3.37.1 — QR codes Revolut/PayPal depuis photo uploadée (plus de QR code généré cassé) (14/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -279,6 +279,8 @@ const DEFAULT_SETTINGS = {
   iban: "",
   revolutLink: "", // ex: https://revolut.me/tonnom
   paypalLink: "",  // ex: https://paypal.me/toncompte
+  revolutQR: "",   // URL Firebase Storage de la photo QR code Revolut
+  paypalQR: "",    // URL Firebase Storage de la photo QR code PayPal
   // Barèmes de tarification automatique des options de livraison, par ARTICLE individuel (id du stock).
   // Forme : { [itemId]: [{ min, max, price }, ...] }. Vide par défaut (0 € tant que non configuré).
   // Barèmes des options de livraison, par ARTICLE individuel (id du stock) :
@@ -970,6 +972,33 @@ function Sel({ label, value, onChange, options }) {
 // Éditeur d'une grille de tranches { min, max, price } pour une catégorie + un type d'option.
 // tiers : tableau de tranches. onChange(newTiers) : appelé à chaque modification.
 // Réglage "Monter à l'étage" pour un article : quantité max transportable par trajet + prix du trajet.
+// Bouton d'upload d'un QR code vers Firebase Storage
+function QRUploadButton({ label, onUploaded, name }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
+  const fileRef = useRef(null);
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setError(null);
+    try {
+      const url = await uploadQRCode(name, file);
+      onUploaded(url);
+    } catch (err) { setError("Erreur upload : " + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+  return (
+    <div>
+      <button type="button" onClick={() => fileRef.current?.click()} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px dashed #9ca3af", background: "#fff", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 700, color: "#444" }}>
+        {uploading ? "⏳ Upload en cours..." : label}
+      </button>
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
+      {error && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
 function EtageBaremeFields({ cfg, onChange }) {
   const c = cfg || { batchSize: "", price: "" };
   return (
@@ -3801,19 +3830,29 @@ function DeliveryCheckout({ order, settings, stock, onConfirm, onRefuse, onClose
                 </div>
               )}
 
-              {modePaiement === "cb" && settings.revolutLink && (
+              {modePaiement === "cb" && (
                 <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>QR Code Revolut — montant : {solde.toFixed(2)} €</div>
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(settings.revolutLink + "/" + solde.toFixed(2))}`} style={{ borderRadius: 10, width: 150, height: 150 }} />
-                  <div style={{ marginTop: 8 }}><a href={`${settings.revolutLink}/${solde.toFixed(2)}`} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 13 }}>Ouvrir Revolut →</a></div>
+                  {settings.revolutQR ? (
+                    <>
+                      <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>QR Code Revolut — montant à saisir : <strong>{solde.toFixed(2)} €</strong></div>
+                      <img src={settings.revolutQR} style={{ width: 180, height: 180, borderRadius: 10, objectFit: "contain", background: "#fff" }} />
+                    </>
+                  ) : (
+                    <div style={{ color: "#999", fontSize: 13 }}>⚙️ Configure ton QR code Revolut dans Réglages → Paiement</div>
+                  )}
                 </div>
               )}
 
-              {modePaiement === "paypal" && settings.paypalLink && (
+              {modePaiement === "paypal" && (
                 <div style={{ background: "#e8f0fe", borderRadius: 10, padding: 12, textAlign: "center" }}>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>QR Code PayPal — montant : {solde.toFixed(2)} €</div>
-                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(settings.paypalLink + "/" + solde.toFixed(2))}`} style={{ borderRadius: 10, width: 150, height: 150 }} />
-                  <div style={{ marginTop: 8 }}><a href={`${settings.paypalLink}/${solde.toFixed(2)}`} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 13 }}>Ouvrir PayPal →</a></div>
+                  {settings.paypalQR ? (
+                    <>
+                      <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>QR Code PayPal — montant à saisir : <strong>{solde.toFixed(2)} €</strong></div>
+                      <img src={settings.paypalQR} style={{ width: 180, height: 180, borderRadius: 10, objectFit: "contain", background: "#fff" }} />
+                    </>
+                  ) : (
+                    <div style={{ color: "#999", fontSize: 13 }}>⚙️ Configure ton QR code PayPal dans Réglages → Paiement</div>
+                  )}
                 </div>
               )}
 
@@ -4391,15 +4430,31 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
               <Inp label="IBAN" value={local.iban || ""} onChange={v => setL("iban", v)} placeholder="FR76 XXXX XXXX XXXX XXXX XXXX XXX" />
               <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>Affiché au client lors de l'encaissement par virement.</div>
             </div>
+
             <div style={{ background: "#e8f5e9", borderRadius: 10, padding: 14 }}>
-              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💳 Revolut (CB / QR Code)</div>
-              <Inp label="Lien Revolut" value={local.revolutLink || ""} onChange={v => setL("revolutLink", v)} placeholder="https://revolut.me/tonnom" />
-              <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>L'app génère automatiquement un QR code avec le montant à payer.</div>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💳 Revolut — QR Code</div>
+              {local.revolutQR ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                  <img src={local.revolutQR} style={{ width: 140, height: 140, borderRadius: 10, objectFit: "contain", background: "#fff", border: "1px solid #e5e7eb" }} />
+                  <Btn variant="secondary" size="sm" onClick={() => setL("revolutQR", "")}>🗑️ Supprimer</Btn>
+                </div>
+              ) : (
+                <QRUploadButton label="📷 Ajouter la photo du QR code Revolut" onUploaded={url => setL("revolutQR", url)} name="revolut" />
+              )}
+              <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Dans l'app Revolut → Profil → "Recevoir" → capture d'écran du QR code.</div>
             </div>
+
             <div style={{ background: "#e8f0fe", borderRadius: 10, padding: 14 }}>
-              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💙 PayPal (Entre proches — 0% de frais)</div>
-              <Inp label="Lien PayPal.me" value={local.paypalLink || ""} onChange={v => setL("paypalLink", v)} placeholder="https://paypal.me/toncompte" />
-              <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>Utilise "Envoyer à un ami" (Entre proches) pour éviter les frais de transaction.</div>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>💙 PayPal — QR Code</div>
+              {local.paypalQR ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+                  <img src={local.paypalQR} style={{ width: 140, height: 140, borderRadius: 10, objectFit: "contain", background: "#fff", border: "1px solid #e5e7eb" }} />
+                  <Btn variant="secondary" size="sm" onClick={() => setL("paypalQR", "")}>🗑️ Supprimer</Btn>
+                </div>
+              ) : (
+                <QRUploadButton label="📷 Ajouter la photo du QR code PayPal" onUploaded={url => setL("paypalQR", url)} name="paypal" />
+              )}
+              <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Dans l'app PayPal → Scanner → "Mon code QR" → capture d'écran.</div>
             </div>
           </div>
         </Card>

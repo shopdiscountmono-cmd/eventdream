@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.37.1 — QR codes Revolut/PayPal depuis photo uploadée (plus de QR code généré cassé) (14/07/2026)";
+const APP_VERSION = "v3.37.2 — page confirmation client + paiement acompte en ligne (WhatsApp/SMS/lien) (14/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -2309,6 +2309,27 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
             <Btn variant="primary" onClick={() => onShare(order)} style={{ flex: 1, minWidth: 180 }}><span style={{ width: 16, height: 16 }}>{I.share}</span> Partager le devis PDF</Btn>
             <Btn variant="secondary" onClick={() => onShare(order, "facture")} style={{ flex: 1, minWidth: 140 }}>🧾 Générer la facture</Btn>
           </div>}
+          {(order.status === "Non confirmé" || order.status === "Devis" || order.status === "Brouillon") && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: "#666", fontWeight: 700 }}>🔗 Lien de confirmation client :</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn variant="secondary" size="sm" onClick={() => {
+                  const link = `${window.location.origin}/confirm.html?id=${order.id}`;
+                  const msg = `Bonjour ${order.clientName},\n\nVoici votre devis EventDream :\n${link}\n\nVous pouvez confirmer et payer votre acompte directement via ce lien. À bientôt !`;
+                  window.open(`https://wa.me/${(order.clientPhone||"").replace(/[\s\-\.+]/g,"")}?text=${encodeURIComponent(msg)}`);
+                }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
+                <Btn variant="secondary" size="sm" onClick={() => {
+                  const link = `${window.location.origin}/confirm.html?id=${order.id}`;
+                  const msg = `Bonjour ${order.clientName}, voici votre devis EventDream : ${link}`;
+                  window.open(`sms:${order.clientPhone}?&body=${encodeURIComponent(msg)}`);
+                }} style={{ flex: 1 }}>📱 SMS</Btn>
+                <Btn variant="secondary" size="sm" onClick={() => {
+                  const link = `${window.location.origin}/confirm.html?id=${order.id}`;
+                  navigator.clipboard.writeText(link);
+                }} style={{ flex: 1 }}>📋 Copier</Btn>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

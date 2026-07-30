@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirmer votre devis — EventDream</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f5f7;min-height:100vh}
+    .wrap{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+    .logo{text-align:center;padding:20px 0}
+    .logo h1{font-size:24px;font-weight:900;color:#1a1a2e}
+    .logo p{font-size:13px;color:#999;margin-top:4px}
+    .card{background:#fff;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+    .card h2{font-size:15px;font-weight:800;margin-bottom:14px;color:#1a1a2e}
+    .header{background:#1a1a2e;color:#fff;border-radius:14px;padding:16px;margin-bottom:16px}
+    .header .lbl{font-size:10px;opacity:.6;text-transform:uppercase;letter-spacing:.1em}
+    .header .id{font-size:14px;font-weight:900;margin:2px 0}
+    .header .client{font-size:18px;font-weight:800}
+    .row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:14px}
+    .row:last-child{border-bottom:none}
+    .total-box{background:#f0fdf4;border-radius:12px;padding:14px;text-align:center;margin:12px 0}
+    .total-box .lbl{font-size:11px;color:#065f46;font-weight:700;text-transform:uppercase}
+    .total-box .amt{font-size:28px;font-weight:900;color:#10b981}
+    .choice-btn{width:100%;padding:14px;border-radius:12px;border:2px solid #e5e7eb;background:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;text-align:left;font-family:inherit}
+    .choice-btn.sel{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
+    .pay-btn{width:100%;padding:16px;border-radius:14px;border:none;background:#1a1a2e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px}
+    .qr-box{text-align:center;padding:16px;background:#f8f9fa;border-radius:12px;margin-top:12px}
+    .qr-box img{width:180px;height:180px;border-radius:10px;object-fit:contain;background:#fff}
+    .method-tabs{display:flex;gap:8px;margin-bottom:12px}
+    .method-tab{flex:1;padding:10px;border-radius:10px;border:1.5px solid #e5e7eb;background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+    .method-tab.active{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
+    .success-box{text-align:center;padding:40px 20px}
+    .success-box .icon{font-size:60px;margin-bottom:16px}
+    .success-box h2{font-size:22px;font-weight:900;color:#10b981;margin-bottom:8px}
+    .iban-box{background:#f0fdf4;border-radius:12px;padding:16px}
+    .iban-val{font-family:monospace;font-size:15px;font-weight:800;margin:8px 0;word-break:break-all}
+    .copy-btn{padding:8px 16px;border-radius:8px;border:1.5px solid #10b981;background:#fff;color:#10b981;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit}
+    .err{background:#fef2f2;border-radius:12px;padding:20px;text-align:center;color:#b91c1c;font-weight:700}
+    .lang-sw{text-align:right;margin-bottom:8px}
+    .lang-sw button{background:none;border:1px solid #e5e7eb;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+    .cond{font-size:11px;color:#999;text-align:center;margin-top:16px;line-height:1.5}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lang-sw"><button onclick="toggleLang()">🌐 EN / FR</button></div>
+  <div class="logo"><h1>EventDream</h1><p id="logo-sub">Confirmation de votre devis</p></div>
+  <div id="app"><div style="text-align:center;padding:60px;color:#999">⏳</div></div>
+</div>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import{getFirestore,doc,getDoc,updateDoc}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
+const db=getFirestore(initializeApp(cfg));
+let lang="fr",order=null,settings=null,pct=30,method="revolut";
+const T={fr:{sub:"Confirmation de votre devis",title:"Votre devis",items:"Articles",total:"Total",date:"Date",ret:"Retour",mode_liv:"🚚 Livraison",mode_ret:"🏠 Retrait entrepôt",choose:"Choisir le montant à payer",p30:"30% d'acompte — réservation",p100:"100% — paiement complet",pay:"Payer avec",scan:"Scannez ce QR code pour payer",amt:"Montant :",iban:"IBAN",copy:"📋 Copier l'IBAN",btn:"✅ J'ai effectué le paiement",ok_title:"Merci pour votre confirmation !",ok_text:"Votre devis est confirmé. À très bientôt !",err:"Devis introuvable.",already:"Ce devis a déjà été confirmé. Merci !",cond:"En confirmant, vous acceptez les conditions générales de location."},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",ok_title:"Thank you!",ok_text:"Your quote is confirmed. See you soon!",err:"Quote not found.",already:"This quote is already confirmed. Thank you!",cond:"By confirming, you agree to the rental terms."}};
+const t=k=>T[lang][k]||k;
+window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
+const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
+const calcTotal=o=>{const sub=(o.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseInt(i.qty)||0),0);const disc=o.discountType==="percent"?sub*(parseFloat(o.discountValue)||0)/100:(parseFloat(o.discountValue)||0);const del=parseFloat(o.deliveryPriceManual)||0;return Math.max(0,sub-disc)+del};
+function render(){
+  if(!order)return;
+  const total=calcTotal(order),acompte=Math.round(total*pct)/100;
+  const items=(order.items||[]).map(i=>`<div class="row"><span style="color:#444">${i.icon||"📦"} ${i.name}</span><span style="font-weight:700">×${i.qty} — ${((parseFloat(i.price)||0)*parseInt(i.qty)).toFixed(2)} €</span></div>`).join("");
+  const del=parseFloat(order.deliveryPriceManual)||0;
+  const sub=(order.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseInt(i.qty)||0),0);
+  const disc=order.discountType==="percent"?sub*(parseFloat(order.discountValue)||0)/100:(parseFloat(order.discountValue)||0);
+  const methods=[];
+  if(settings.revolutQR)methods.push(["revolut","💳 Revolut"]);
+  if(settings.paypalQR)methods.push(["paypal","💙 PayPal"]);
+  if(settings.iban)methods.push(["virement","🏦 Virement"]);
+  if(methods.length&&!methods.find(m=>m[0]===method))method=methods[0]?.[0];
+  const tabs=methods.length>1?`<div class="method-tabs">${methods.map(([k,l])=>`<button class="method-tab${method===k?" active":""}" onclick="setM('${k}')">${l}</button>`).join("")}</div>`:"";
+  let qr="";
+  if(method==="revolut"&&settings.revolutQR)qr=`<div class="qr-box"><div style="font-size:12px;color:#666;margin-bottom:8px">${t("scan")}</div><div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div><img src="${settings.revolutQR}" style="margin-top:12px"/></div>`;
+  else if(method==="paypal"&&settings.paypalQR)qr=`<div class="qr-box"><div style="font-size:12px;color:#666;margin-bottom:8px">${t("scan")}</div><div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div><img src="${settings.paypalQR}" style="margin-top:12px"/></div>`;
+  else if(method==="virement"&&settings.iban)qr=`<div class="iban-box"><div style="font-size:12px;color:#666">${t("iban")}</div><div class="iban-val">${settings.iban}</div><div style="font-size:12px;color:#666;margin-bottom:8px">${t("amt")} <strong>${acompte.toFixed(2)} €</strong></div><button class="copy-btn" onclick="navigator.clipboard.writeText('${settings.iban}')">${t("copy")}</button></div>`;
+  document.getElementById("app").innerHTML=`
+    <div class="header"><div class="lbl">${t("title")}</div><div class="id">${order.id}</div><div class="client">${order.clientName}</div></div>
+    <div class="card"><h2>📋 ${t("items")}</h2>${items}${disc>0?`<div class="row"><span style="color:#666">Remise</span><span style="font-weight:700;color:#10b981">−${disc.toFixed(2)} €</span></div>`:""}${del>0?`<div class="row"><span style="color:#666">🚚 Livraison</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}<div class="row" style="font-size:16px"><span><strong>${t("total")}</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div><div class="row"><span style="color:#666">${t("date")}</span><span style="font-weight:700">${fmtD(order.deliveryDate)}</span></div>${order.returnDate?`<div class="row"><span style="color:#666">${t("ret")}</span><span style="font-weight:700">${fmtD(order.returnDate)}</span></div>`:""}<div class="row"><span style="color:#666">Mode</span><span style="font-weight:700">${order.deliveryMode==="livraison"?t("mode_liv"):t("mode_ret")}</span></div></div>
+    <div class="card"><h2>💰 ${t("choose")}</h2><button class="choice-btn${pct===30?" sel":""}" onclick="setPct(30)">30% — ${(total*.3).toFixed(2)} € (${t("p30")})</button><button class="choice-btn${pct===100?" sel":""}" onclick="setPct(100)">100% — ${total.toFixed(2)} € (${t("p100")})</button></div>
+    <div class="card"><h2>💳 ${t("pay")}</h2>${tabs}<div class="total-box"><div class="lbl">${t("amt")}</div><div class="amt">${acompte.toFixed(2)} €</div></div>${qr}<button class="pay-btn" onclick="doConfirm()">${t("btn")}</button></div>
+    <p class="cond">${t("cond")}</p>`;
+}
+window.setPct=p=>{pct=p;render()};
+window.setM=m=>{method=m;render()};
+window.doConfirm=async()=>{
+  if(!order)return;
+  try{
+    const total=calcTotal(order),acompte=Math.round(total*pct)/100;
+    await updateDoc(doc(db,"orders",order.id),{status:"Confirmée",phase:"livraison",acompte,acompteMoyen:method,confirmedByClient:true,confirmedAt:new Date().toISOString()});
+    document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;
+  }catch(e){alert("Erreur : "+e.message);}
+};
+(async()=>{
+  const params=new URLSearchParams(window.location.search);
+  const id=params.get("id")||location.pathname.split("/").filter(Boolean).pop();
+  if(!id||id==="confirm"){document.getElementById("app").innerHTML=`<div class="err">${t("err")}</div>`;return;}
+  try{
+    const[oSnap,sSnap]=await Promise.all([getDoc(doc(db,"orders",id)),getDoc(doc(db,"app","settings"))]);
+    if(!oSnap.exists()){document.getElementById("app").innerHTML=`<div class="err">${t("err")}</div>`;return;}
+    order={...oSnap.data(),id:oSnap.id};
+    settings=sSnap.exists()?(sSnap.data().value||sSnap.data()||{}):{};
+    if(["Confirmée","Préparée","Chez le client","Clôturée"].includes(order.status)){
+      document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">✅</div><h2>${t("already")}</h2></div>`;return;
+    }
+    render();
+  }catch(e){document.getElementById("app").innerHTML=`<div class="err">Erreur : ${e.message}</div>`;}
+})();
+</script>
+</body>
+</html>

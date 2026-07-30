@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Demande de devis — EventDream</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f4f5f7;min-height:100vh}
+    .wrap{max-width:520px;margin:0 auto;padding:20px 16px 60px}
+    .logo{text-align:center;padding:20px 0 16px}
+    .logo h1{font-size:26px;font-weight:900;color:#1a1a2e}
+    .logo p{font-size:13px;color:#999;margin-top:4px}
+    .card{background:#fff;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+    .card h2{font-size:15px;font-weight:800;margin-bottom:14px;color:#1a1a2e}
+    label{display:block;font-size:12px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+    input,select,textarea{width:100%;padding:12px 14px;border-radius:10px;border:1.5px solid #e5e7eb;font-size:15px;font-family:inherit;background:#fff;outline:none;margin-bottom:14px}
+    input:focus,select:focus,textarea:focus{border-color:#3b82f6}
+    .mode-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+    .mode-btn{padding:14px;border-radius:12px;border:2px solid #e5e7eb;background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center}
+    .mode-btn.sel{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
+    .item-row{display:flex;align-items:center;gap:10px;padding:12px;background:#f8f9fa;border-radius:10px;margin-bottom:8px}
+    .item-row .icon{font-size:22px;flex-shrink:0}
+    .item-row .name{flex:1;font-weight:700;font-size:14px}
+    .item-row .price{font-size:12px;color:#999}
+    .qty-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .qty-btn{width:32px;height:32px;border-radius:8px;border:none;font-size:18px;font-weight:900;cursor:pointer}
+    .qty-btn.plus{background:#dcfce7;color:#10b981}
+    .qty-btn.minus{background:#fee2e2;color:#ef4444}
+    .qty-val{font-weight:900;font-size:16px;min-width:28px;text-align:center}
+    .opts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+    .opt-cb{display:flex;align-items:center;gap:6px;font-size:12px;color:#666;cursor:pointer}
+    .opt-cb input{width:16px;height:16px;margin:0;cursor:pointer}
+    .delivery-box{background:#eff6ff;border-radius:12px;padding:14px;margin-bottom:14px}
+    .delivery-price{font-size:20px;font-weight:900;color:#1d4ed8}
+    .total-box{background:#f0fdf4;border-radius:12px;padding:16px;text-align:center;margin-bottom:16px}
+    .total-box .lbl{font-size:11px;color:#065f46;font-weight:700;text-transform:uppercase}
+    .total-box .amt{font-size:32px;font-weight:900;color:#10b981}
+    .acompte-row{display:flex;gap:10px;margin-bottom:14px}
+    .acompte-btn{flex:1;padding:12px;border-radius:10px;border:2px solid #e5e7eb;background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+    .acompte-btn.sel{border-color:#10b981;background:#f0fdf4;color:#065f46}
+    .submit-btn{width:100%;padding:18px;border-radius:14px;border:none;background:#1a1a2e;color:#fff;font-size:17px;font-weight:800;cursor:pointer;font-family:inherit}
+    .submit-btn:disabled{opacity:.4;cursor:not-allowed}
+    .lang-sw{text-align:right;margin-bottom:8px}
+    .lang-sw button{background:none;border:1px solid #e5e7eb;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+    .success-box{text-align:center;padding:40px 20px}
+    .success-box .icon{font-size:60px;margin-bottom:16px}
+    .success-box h2{font-size:22px;font-weight:900;color:#10b981;margin-bottom:8px}
+    .success-box p{color:#666;font-size:14px;line-height:1.6}
+    .err{color:#ef4444;font-size:13px;margin-bottom:12px;font-weight:700}
+    .hint{font-size:11px;color:#999;margin-top:-10px;margin-bottom:14px}
+    .calc-loading{font-size:12px;color:#3b82f6;margin-bottom:8px}
+    .step-bar{display:flex;gap:4px;margin-bottom:20px}
+    .step-bar div{flex:1;height:4px;border-radius:4px;background:#e5e7eb}
+    .step-bar div.done{background:#10b981}
+    .step-bar div.active{background:#3b82f6}
+    .nav-btns{display:flex;gap:10px;margin-top:16px}
+    .back-btn{flex:1;padding:14px;border-radius:12px;border:1.5px solid #e5e7eb;background:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;color:#666}
+    .next-btn{flex:2;padding:14px;border-radius:12px;border:none;background:#1a1a2e;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
+    .next-btn:disabled{opacity:.4;cursor:not-allowed}
+    .stock-warning{background:#fef9c3;border-radius:10px;padding:10px 14px;font-size:13px;color:#92400e;margin-top:8px;font-weight:600}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lang-sw"><button onclick="toggleLang()">🌐 EN / FR</button></div>
+  <div class="logo"><h1>EventDream</h1><p id="logo-sub">Demande de devis en ligne</p></div>
+  <div id="app"><div style="text-align:center;padding:60px;color:#999">⏳</div></div>
+</div>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import{getFirestore,doc,getDoc,collection,getDocs,addDoc,setDoc}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
+const db=getFirestore(initializeApp(cfg));
+const MAPS_KEY="AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU";
+let lang="fr",step=1,stockItems=[],settings={},reservedQtys={};
+let form={name:"",phone:"",email:"",address:"",mode:"retrait",date:"",returnDate:"",items:{},options:{},deliveryKm:0,deliveryMin:0,deliveryCost:0,acomptePct:30};
+const T={fr:{sub:"Demande de devis en ligne",s1:"Vos coordonnées",s2:"Date & Mode",s3:"Matériel",s4:"Récapitulatif",name:"Nom complet",phone:"Téléphone",email:"Email",address:"Adresse de livraison",mode_liv:"🚚 Livraison à domicile",mode_ret:"🏠 Retrait entrepôt",date:"Date de livraison / retrait",retDate:"Date de retour",items:"Choisissez vos articles",washing:"Option lavage",setup:"Montage/Installation",calcul:"📍 Calcul de la distance...",delivery:"🚚 Frais de livraison",recap:"Récapitulatif de votre demande",subtotal:"Sous-total",total:"Total",acompte:"Acompte à payer",p30:"30% — réservation",p100:"100% — paiement complet",submit:"✅ Envoyer ma demande",next:"Suivant →",back:"← Retour",ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande. Nous vous contacterons très rapidement pour confirmer votre devis.",stock_warn:"⚠️ Stock potentiellement insuffisant pour les quantités demandées. Votre demande sera traitée manuellement.",req:"Champs obligatoires",free_text:"Demande spéciale (articles non listés, options particulières...)",free_text_ph:"Ex: nappes rouges, décoration florale, bougeoirs..."},en:{sub:"Online Quote Request",s1:"Your details",s2:"Date & Mode",s3:"Equipment",s4:"Summary",name:"Full name",phone:"Phone",email:"Email",address:"Delivery address",mode_liv:"🚚 Home delivery",mode_ret:"🏠 Warehouse pickup",date:"Delivery / pickup date",retDate:"Return date",items:"Choose your items",washing:"Washing option",setup:"Setup/Installation",calcul:"📍 Calculating distance...",delivery:"🚚 Delivery fee",recap:"Your quote summary",subtotal:"Subtotal",total:"Total",acompte:"Deposit to pay",p30:"30% — reservation",p100:"100% — full payment",submit:"✅ Send my request",next:"Next →",back:"← Back",ok_title:"Request sent!",ok_text:"We have received your request. We will contact you shortly to confirm your quote.",stock_warn:"⚠️ Stock may be insufficient for the requested quantities. Your request will be processed manually.",req:"Required fields",free_text:"Special request (unlisted items, special options...)",free_text_ph:"Ex: red tablecloths, floral decoration, candleholders..."}};
+const t=k=>T[lang][k]||k;
+window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
+
+async function loadData(){
+  const[stockSnap,settingsSnap]=await Promise.all([getDocs(collection(db,"stock")),getDoc(doc(db,"app","settings"))]);
+  stockItems=stockSnap.docs.map(d=>({...d.data(),id:d.id})).filter(s=>s.name&&(s.price||0)>0);
+  settings=settingsSnap.exists()?(settingsSnap.data().value||settingsSnap.data()||{}):{};
+  // Calcul des stocks déjà réservés (commandes actives)
+  const ordersSnap=await getDocs(collection(db,"orders"));
+  ordersSnap.docs.forEach(d=>{
+    const o=d.data();
+    if(!["Clôturée","Non confirmé","Brouillon","Devis"].includes(o.status)){
+      (o.items||[]).forEach(i=>{reservedQtys[i.id]=(reservedQtys[i.id]||0)+(parseInt(i.qty)||0);});
+    }
+  });
+  render();
+}
+
+async function computeDistance(origin,dest){
+  if(!MAPS_KEY||!origin||!dest)return null;
+  try{
+    const resp=await fetch("https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix",{
+      method:"POST",headers:{"Content-Type":"application/json","X-Goog-Api-Key":MAPS_KEY,"X-Goog-FieldMask":"originIndex,destinationIndex,duration,distanceMeters,condition"},
+      body:JSON.stringify({origins:[{waypoint:{address:origin}}],destinations:[{waypoint:{address:dest}}],travelMode:"DRIVE"})
+    });
+    if(!resp.ok)return null;
+    const data=await resp.json();
+    const el=Array.isArray(data)?data[0]:data;
+    if(el&&el.condition==="ROUTE_EXISTS"&&el.distanceMeters!=null){
+      const sec=parseInt(String(el.duration).replace("s",""))||0;
+      return{km:Math.round(el.distanceMeters/100)/10,min:Math.round(sec/60)};
+    }
+  }catch(e){}
+  return null;
+}
+
+function calcDelivery(km,min){
+  const s=settings;
+  if(km<=0)return 0;
+  const forfait=s.minDeliveryPrice||0;
+  const seuilKm=s.seuilKm!=null?s.seuilKm:5;
+  const seuilMin=s.seuilMin!=null?s.seuilMin:0;
+  const kmSup=Math.max(0,km-seuilKm),minSup=Math.max(0,(min||0)-seuilMin);
+  return forfait+kmSup*(s.pricePerKm||0)+minSup*(s.pricePerMin||0);
+}
+
+function calcSubtotal(){
+  let sub=0;
+  Object.entries(form.items).forEach(([id,qty])=>{
+    const item=stockItems.find(s=>s.id===id);
+    if(!item||qty<=0)return;
+    let price=(parseFloat(item.price)||0)*qty;
+    if(form.options[id+"_washing"]&&item.cleaningPrice)(price+=(parseFloat(item.cleaningPrice)||0)*qty);
+    sub+=price;
+  });
+  return sub;
+}
+
+let debounceTimer=null;
+function onAddressChange(val){
+  form.address=val;
+  if(form.mode!=="livraison")return;
+  clearTimeout(debounceTimer);
+  debounceTimer=setTimeout(async()=>{
+    if(val.length<10)return;
+    const el=document.getElementById("delivery-calc");
+    if(el)el.textContent=t("calcul");
+    const warehouse=settings.warehouseAddress||"";
+    const res=await computeDistance(warehouse,val);
+    if(res){
+      form.deliveryKm=res.km;form.deliveryMin=res.min;
+      const cost=calcDelivery(res.km,res.min)*2; // aller + retour
+      form.deliveryCost=cost;
+      if(el)el.textContent=`🚚 ${res.km} km — ${cost.toFixed(2)} €`;
+    }else{
+      form.deliveryCost=0;
+      if(el)el.textContent="⚠️ Adresse non trouvée — les frais seront calculés manuellement.";
+    }
+    updateTotal();
+  },800);
+}
+
+function updateTotal(){
+  const sub=calcSubtotal();
+  const total=sub+form.deliveryCost;
+  const el=document.getElementById("total-amt");
+  if(el)el.textContent=total.toFixed(2)+" €";
+  const subEl=document.getElementById("sub-amt");
+  if(subEl)subEl.textContent=sub.toFixed(2)+" €";
+  const delEl=document.getElementById("del-amt");
+  if(delEl)delEl.textContent=form.deliveryCost.toFixed(2)+" €";
+  const acompteEl=document.getElementById("acompte-amt");
+  if(acompteEl)acompteEl.textContent=((total*form.acomptePct)/100).toFixed(2)+" €";
+}
+
+function hasStockWarning(){
+  return Object.entries(form.items).some(([id,qty])=>{
+    const item=stockItems.find(s=>s.id===id);
+    if(!item||qty<=0)return false;
+    const avail=(parseInt(item.total)||0)-(reservedQtys[id]||0);
+    return qty>avail;
+  });
+}
+
+function render(){
+  const steps=[t("s1"),t("s2"),t("s3"),t("s4")];
+  const barHTML=`<div class="step-bar">${steps.map((_,i)=>`<div class="${i<step-1?"done":i===step-1?"active":""}"></div>`).join("")}</div>`;
+
+  if(step===1){
+    document.getElementById("app").innerHTML=`${barHTML}
+    <div class="card"><h2>👤 ${t("s1")}</h2>
+      <label>${t("name")} *</label><input id="f-name" value="${form.name}" placeholder="Prénom Nom" autocomplete="off"/>
+      <label>${t("phone")} *</label><input id="f-phone" type="tel" value="${form.phone}" placeholder="+33 6 XX XX XX XX" autocomplete="off"/>
+      <label>${t("email")}</label><input id="f-email" type="email" value="${form.email}" placeholder="email@exemple.com" autocomplete="off"/>
+      <div id="err" class="err" style="display:none"></div>
+      <button class="next-btn" onclick="goStep1()">${t("next")}</button>
+    </div>`;
+  }else if(step===2){
+    document.getElementById("app").innerHTML=`${barHTML}
+    <div class="card"><h2>📅 ${t("s2")}</h2>
+      <label>${t("date")} *</label><input id="f-date" type="date" value="${form.date}" min="${new Date().toISOString().slice(0,10)}"/>
+      <label>${t("retDate")}</label><input id="f-retdate" type="date" value="${form.returnDate}" min="${form.date||new Date().toISOString().slice(0,10)}"/>
+      <label>Mode *</label>
+      <div class="mode-btns">
+        <button class="mode-btn${form.mode==="livraison"?" sel":""}" onclick="setMode('livraison')">${t("mode_liv")}</button>
+        <button class="mode-btn${form.mode==="retrait"?" sel":""}" onclick="setMode('retrait')">${t("mode_ret")}</button>
+      </div>
+      ${form.mode==="livraison"?`
+        <label>${t("address")} *</label>
+        <input id="f-addr" value="${form.address}" placeholder="3 rue de la Paix, 94800 Villejuif" autocomplete="off" oninput="onAddrChange(this.value)"/>
+        <div id="delivery-calc" class="calc-loading">${form.deliveryCost>0?`🚚 ${form.deliveryKm} km — ${form.deliveryCost.toFixed(2)} €`:""}</div>
+      `:""}
+      <div id="err2" class="err" style="display:none"></div>
+      <div class="nav-btns"><button class="back-btn" onclick="step=1;render()">${t("back")}</button><button class="next-btn" onclick="goStep2()">${t("next")}</button></div>
+    </div>`;
+  }else if(step===3){
+    const cats=[...new Set(stockItems.map(s=>s.category).filter(Boolean))].sort();
+    let html=`${barHTML}<div class="card"><h2>📦 ${t("items")}</h2>`;
+    cats.forEach(cat=>{
+      const catItems=stockItems.filter(s=>s.category===cat);
+      html+=`<div style="font-size:11px;font-weight:800;color:#999;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">${cat}</div>`;
+      catItems.forEach(item=>{
+        const qty=form.items[item.id]||0;
+        const avail=(parseInt(item.total)||0)-(reservedQtys[item.id]||0);
+        const low=qty>0&&qty>avail;
+        html+=`<div class="item-row${low?" ":""}">
+          <div class="icon">${item.icon||"📦"}</div>
+          <div style="flex:1">
+            <div class="name">${item.name}</div>
+            <div class="price">${item.price} €/u${avail>0?` · dispo: ${avail}`:` · <span style="color:#ef4444">sur demande</span>`}</div>
+            ${qty>0&&item.cleaningPrice?`<div class="opts"><label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/> 🧺 ${t("washing")} +${item.cleaningPrice}€</label></div>`:""}
+          </div>
+          <div class="qty-ctrl">
+            <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
+            <div class="qty-val">${qty}</div>
+            <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
+          </div>
+        </div>`;
+      });
+    });
+    html+=`<div style="margin-top:14px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" style="resize:vertical">${form.freeText||""}</textarea></div>`;
+    if(hasStockWarning())html+=`<div class="stock-warning">${t("stock_warn")}</div>`;
+    html+=`<div class="nav-btns"><button class="back-btn" onclick="step=2;render()">${t("back")}</button><button class="next-btn" onclick="goStep3()">${t("next")}</button></div></div>`;
+    document.getElementById("app").innerHTML=html;
+    updateTotal();
+  }else if(step===4){
+    const sub=calcSubtotal(),total=sub+form.deliveryCost;
+    const acompte=(total*form.acomptePct/100).toFixed(2);
+    const selItems=Object.entries(form.items).filter(([,q])=>q>0);
+    document.getElementById("app").innerHTML=`${barHTML}
+    <div class="card"><h2>📋 ${t("recap")}</h2>
+      <div style="margin-bottom:10px"><strong>${form.name}</strong> · ${form.phone}${form.email?` · ${form.email}`:""}</div>
+      ${form.date?`<div style="font-size:13px;color:#666;margin-bottom:4px">📅 ${form.date}${form.returnDate?" → "+form.returnDate:""}</div>`:""}
+      ${form.mode==="livraison"?`<div style="font-size:13px;color:#666;margin-bottom:10px">🚚 ${form.address}</div>`:"<div style='font-size:13px;color:#666;margin-bottom:10px'>🏠 Retrait entrepôt</div>"}
+      ${selItems.map(([id,qty])=>{const it=stockItems.find(s=>s.id===id);return it?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>${it.icon||"📦"} ${it.name} ×${qty}</span><span style="font-weight:700">${((parseFloat(it.price)||0)*qty).toFixed(2)} €</span></div>`:""}).join("")}
+      ${form.deliveryCost>0?`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:14px"><span>🚚 Livraison (${form.deliveryKm} km)</span><span style="font-weight:700">${form.deliveryCost.toFixed(2)} €</span></div>`:""}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:16px"><span><strong>Total</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div>
+      ${form.freeText?`<div style="background:#fef9c3;border-radius:8px;padding:10px;font-size:13px;margin-top:8px">📝 ${form.freeText}</div>`:""}
+    </div>
+    <div class="card"><h2>💰 ${t("acompte")}</h2>
+      <div class="acompte-row">
+        <button class="acompte-btn${form.acomptePct===30?" sel":""}" onclick="setPct(30)">30% — ${(total*.3).toFixed(2)} €</button>
+        <button class="acompte-btn${form.acomptePct===100?" sel":""}" onclick="setPct(100)">100% — ${total.toFixed(2)} €</button>
+      </div>
+      <div style="text-align:center;font-size:12px;color:#999">Acompte demandé : <strong>${acompte} €</strong> — vous recevrez les instructions de paiement par message.</div>
+    </div>
+    <div id="err4" class="err" style="display:none"></div>
+    <button class="submit-btn" id="submit-btn" onclick="submitForm()">${t("submit")}</button>
+    <div class="nav-btns" style="margin-top:10px"><button class="back-btn" onclick="step=3;render()">${t("back")}</button></div>`;
+  }
+}
+
+window.setMode=m=>{form.mode=m;if(m==="retrait"){form.deliveryCost=0;form.deliveryKm=0;}render()};
+window.setQty=(id,qty)=>{form.items[id]=Math.max(0,qty);render()};
+window.toggleOpt=(key,val)=>{form.options[key]=val;updateTotal()};
+window.setPct=p=>{form.acomptePct=p;render()};
+window.onAddrChange=v=>onAddressChange(v);
+
+window.goStep1=()=>{
+  form.name=document.getElementById("f-name")?.value||"";
+  form.phone=document.getElementById("f-phone")?.value||"";
+  form.email=document.getElementById("f-email")?.value||"";
+  const err=document.getElementById("err");
+  if(!form.name.trim()||!form.phone.trim()){err.textContent=t("req");err.style.display="block";return;}
+  step=2;render();
+};
+window.goStep2=()=>{
+  form.date=document.getElementById("f-date")?.value||"";
+  form.returnDate=document.getElementById("f-retdate")?.value||"";
+  if(form.mode==="livraison")form.address=document.getElementById("f-addr")?.value||"";
+  const err=document.getElementById("err2");
+  if(!form.date){err.textContent=t("req");err.style.display="block";return;}
+  if(form.mode==="livraison"&&!form.address.trim()){err.textContent=t("req");err.style.display="block";return;}
+  step=3;render();
+};
+window.goStep3=()=>{
+  form.freeText=document.getElementById("f-free")?.value||"";
+  const hasItems=Object.values(form.items).some(q=>q>0)||form.freeText.trim();
+  if(!hasItems){alert(lang==="fr"?"Veuillez sélectionner au moins un article ou saisir une demande.":"Please select at least one item or enter a request.");return;}
+  step=4;render();
+};
+
+window.submitForm=async()=>{
+  const btn=document.getElementById("submit-btn");
+  btn.disabled=true;btn.textContent="⏳...";
+  try{
+    const sub=calcSubtotal(),total=sub+form.deliveryCost;
+    const id="web-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,6);
+    const items=Object.entries(form.items).filter(([,q])=>q>0).map(([itemId,qty])=>{
+      const it=stockItems.find(s=>s.id===itemId);
+      return{id:itemId,name:it?.name||itemId,icon:it?.icon||"📦",qty,price:parseFloat(it?.price)||0,category:it?.category||"",cleaningSelected:!!form.options[itemId+"_washing"],cleaningPrice:parseFloat(it?.cleaningPrice)||0};
+    });
+    const orderData={id,status:"Non confirmé",phase:"livraison",clientName:form.name,clientPhone:form.phone,clientEmail:form.email,address:form.address,deliveryMode:form.mode,deliveryDate:form.date,returnDate:form.returnDate,deliveryKm:form.deliveryKm,deliveryMin:form.deliveryMin,deliveryPriceManual:form.deliveryCost>0?String(form.deliveryCost):"",items,freeTextRequest:form.freeText||"",acompte:0,acomptePct:form.acomptePct,notes:form.freeText||"",createdAt:new Date().toISOString(),createdBy:"web-client",hasStockWarning:hasStockWarning(),stockWarning:hasStockWarning()};
+    await setDoc(doc(db,"orders",id),orderData);
+    document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;
+  }catch(e){
+    btn.disabled=false;btn.textContent=t("submit");
+    document.getElementById("err4").textContent="Erreur : "+e.message;
+    document.getElementById("err4").style.display="block";
+  }
+};
+
+loadData();
+</script>
+</body>
+</html>

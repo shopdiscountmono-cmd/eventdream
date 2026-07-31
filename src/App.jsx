@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.38.0 — devis.html refonte complète + 3 sections devisEnAttente + photo/type stock + lien paiement confirm.html (30/07/2026)";
+const APP_VERSION = "v3.38.1 — devis.html pro (3 niveaux livraison, étage client, dates intelligentes) + sections devisEnAttente fonctionnelles (31/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -5256,6 +5256,13 @@ function AppInner() {
     })
     .filter(o => ((o.clientName || "").toLowerCase().includes(searchQ.toLowerCase()) || (o.id || "").toLowerCase().includes(searchQ.toLowerCase())) && (quickFilter !== "aPreparer" || isAPreparer(o)))
     .sort((a, b) => {
+      if (view === "devisEnAttente") {
+        // Regroupement par section : 1) demandes web, 2) devis manuels, 3) brouillons
+        const rank = (o) => o.createdBy === "web-client" ? 0 : o.status === "Brouillon" ? 2 : 1;
+        const ra = rank(a), rb = rank(b);
+        if (ra !== rb) return ra - rb;
+        return (b.createdAt || b.deliveryDate || "").localeCompare(a.createdAt || a.deliveryDate || "");
+      }
       const aOpen = a.status !== "Clôturée", bOpen = b.status !== "Clôturée";
       if (aOpen !== bOpen) return aOpen ? -1 : 1; // non clôturées toujours en premier
       return (b.closedAt || b.returnDate || b.deliveryDate || "").localeCompare(a.closedAt || a.returnDate || a.deliveryDate || "");
@@ -5386,21 +5393,6 @@ function AppInner() {
 
           {(view === "orders" || view === "devisEnAttente") && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {view === "devisEnAttente" && (() => {
-                const webDemandes = filtered.filter(o => o.createdBy === "web-client");
-                const manuelDevis = filtered.filter(o => o.createdBy !== "web-client" && (o.status === "Devis" || o.status === "Non confirmé"));
-                const brouillons = filtered.filter(o => o.createdBy !== "web-client" && o.status === "Brouillon");
-                return (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {webDemandes.length > 0 && <div style={{ fontSize: 12, fontWeight: 900, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.05em" }}>📱 Demandes clients web ({webDemandes.length})</div>}
-                    {webDemandes.length > 0 && <div style={{ borderBottom: "2px solid #e9d5ff", marginBottom: 6 }} />}
-                    {manuelDevis.length > 0 && webDemandes.length > 0 && <div style={{ fontSize: 12, fontWeight: 900, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 8 }}>📝 Devis manuels ({manuelDevis.length})</div>}
-                    {manuelDevis.length > 0 && webDemandes.length > 0 && <div style={{ borderBottom: "2px solid #bfdbfe", marginBottom: 6 }} />}
-                    {brouillons.length > 0 && (webDemandes.length > 0 || manuelDevis.length > 0) && <div style={{ fontSize: 12, fontWeight: 900, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 8 }}>✏️ Brouillons ({brouillons.length})</div>}
-                    {brouillons.length > 0 && (webDemandes.length > 0 || manuelDevis.length > 0) && <div style={{ borderBottom: "2px solid #e5e7eb", marginBottom: 6 }} />}
-                  </div>
-                );
-              })()}
               {quickFilter === "aPreparer" && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "#f5f3ff", border: "1.5px solid #c4b5fd", borderRadius: 10, padding: "10px 14px" }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "#6d28d9" }}>🔄 Filtre actif : commandes à préparer (départ dans les 4 jours)</span>
@@ -5421,15 +5413,39 @@ function AppInner() {
 
               {filtered.length === 0 ? (
                 <Card style={{ textAlign: "center", padding: 60 }}><div style={{ fontSize: 48, marginBottom: 12 }}>📭</div><div style={{ color: "#999", fontWeight: 600 }}>Aucune commande</div></Card>
-              ) : filtered.map(order => {
+              ) : filtered.map((order, idx) => {
                 const total = orderTotal(order, settings);
                 const reste = total - parseFloat(order.acompte || 0);
                 const phaseLabel = order.phase === "retour" ? "Étape 2 · Retour" : order.phase === "termine" ? "Clôturée" : "Étape 1 · Livraison";
                 const phaseColor = order.phase === "retour" ? "#c2410c" : order.phase === "termine" ? "#6b7280" : "#3b82f6";
                 const isExp = expandedOrders.has(order.id);
                 const orderShortage = !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(order.status) ? stockShortage(order, orders, stock) : [];
+                // Titre de section pour devisEnAttente (inséré avant la 1re carte de chaque groupe)
+                let sectionHeader = null;
+                if (view === "devisEnAttente") {
+                  const rank = (o) => o.createdBy === "web-client" ? 0 : o.status === "Brouillon" ? 2 : 1;
+                  const r = rank(order);
+                  const prevR = idx > 0 ? rank(filtered[idx - 1]) : -1;
+                  if (r !== prevR) {
+                    const SECTIONS = {
+                      0: { label: "📱 Demandes clients web", color: "#7c3aed", border: "#e9d5ff" },
+                      1: { label: "📝 Devis manuels", color: "#1d4ed8", border: "#bfdbfe" },
+                      2: { label: "✏️ Brouillons", color: "#9ca3af", border: "#e5e7eb" },
+                    };
+                    const s = SECTIONS[r];
+                    const count = filtered.filter(o => rank(o) === r).length;
+                    sectionHeader = (
+                      <div style={{ marginTop: idx > 0 ? 12 : 0, marginBottom: 4 }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: s.color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label} ({count})</div>
+                        <div style={{ borderBottom: `2px solid ${s.border}`, marginTop: 4 }} />
+                      </div>
+                    );
+                  }
+                }
                 return (
-                  <Card key={order.id}>
+                  <React.Fragment key={order.id}>
+                  {sectionHeader}
+                  <Card>
                     {orderShortage.length > 0 && (
                       <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "8px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 18 }}>⚠️</span>
@@ -5512,6 +5528,7 @@ function AppInner() {
                     )}
                     </>)}
                   </Card>
+                  </React.Fragment>
                 );
               })}
             </div>

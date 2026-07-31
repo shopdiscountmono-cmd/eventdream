@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.39.1 — Champs lien Revolut/PayPal ajoutés dans Réglages → Paiement (31/07/2026)";
+const APP_VERSION = "v3.40.0 — Aperçu devis interne (bouton Fermer), numéro WhatsApp international + ouverture directe (fix page blanche), bandeau paiement déclaré détaillé, devis.html : prix masqués étape 2 + checkbox lavage visible + fix chevauchement (01/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -631,6 +631,15 @@ const TODAY = new Date().toISOString().split("T")[0];
 const D = (n) => new Date(Date.now() + 86400000 * n).toISOString().split("T")[0];
 // Affiche une date ISO (aaaa-mm-jj) au format français jj/mm/aaaa
 const fmtD = (iso) => { if (!iso) return ""; const p = String(iso).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso; };
+// Convertit un numéro français au format international attendu par WhatsApp.
+// "06 52 40 98 32" → "33652409832". Sans cette conversion, WhatsApp répond
+// "Le nom de profil 0652409832 n'existe pas".
+const toWaNumber = (phone) => {
+  let d = String(phone || "").replace(/[^0-9]/g, "");
+  if (d.startsWith("00")) d = d.slice(2);      // 0033... → 33...
+  else if (d.startsWith("0")) d = "33" + d.slice(1); // 06... → 336...
+  return d;
+};
 
 const DEMO_ORDERS = [
   { id: "dev1" + TODAY.slice(8,10) + TODAY.slice(5,7) + TODAY.slice(2,4), clientName: "Marie Leblanc", clientPhone: "0612345678", clientEmail: "marie@example.com", address: "24 Avenue des Fleurs, 69003 Lyon", deliveryMode: "livraison", deliveryKm: 12, deliveryMin: 18, trajetAller: true, trajetRetour: true, deliveryDate: TODAY, deliveryTime: "09:00", returnDate: D(2), returnTime: "18:00", items: [{ ...CATALOG[0], qty: 50 }, { ...CATALOG[13], qty: 50 }, { ...CATALOG[12], qty: 2 }], acompte: 150, acompteMoyen: "virement", discountType: "fixed", discountValue: 0, status: "Livrée", phase: "retour", notes: "Mariage — décoration dorée" },
@@ -2323,7 +2332,7 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
                 <Btn variant="secondary" size="sm" onClick={() => {
                   const link = `${window.location.origin}/confirm.html?id=${order.id}`;
                   const msg = `Bonjour ${order.clientName},\n\nVoici votre devis EventDream :\n${link}\n\nVous pouvez confirmer et payer votre acompte directement via ce lien. À bientôt !`;
-                  window.open(`https://wa.me/${(order.clientPhone||"").replace(/[\s\-\.+]/g,"")}?text=${encodeURIComponent(msg)}`);
+                  window.location.href = `whatsapp://send?phone=${toWaNumber(order.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
                 }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
                 <Btn variant="secondary" size="sm" onClick={() => {
                   const link = `${window.location.origin}/confirm.html?id=${order.id}`;
@@ -4161,7 +4170,7 @@ function PhoneChoiceModal({ open, phone, phones, onClose }) {
   useEffect(() => { if (open) setSelectedPhone(list.length === 1 ? list[0] : null); }, [open]);
   const close = () => { setSelectedPhone(null); onClose(); };
   const tel = (selectedPhone || "").replace(/\s/g, "");
-  const wa = (selectedPhone || "").replace(/[^0-9]/g, "").replace(/^0/, "33");
+  const wa = toWaNumber(selectedPhone);
   // Étape 1 : plusieurs numéros et aucun choisi encore → on demande lequel.
   if (list.length > 1 && !selectedPhone) {
     return (
@@ -4182,8 +4191,8 @@ function PhoneChoiceModal({ open, phone, phones, onClose }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {list.length > 1 && <button onClick={() => setSelectedPhone(null)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#3b82f6", fontWeight: 700, fontSize: 13, fontFamily: "inherit", cursor: "pointer", padding: 0, marginBottom: 4 }}>← Changer de numéro</button>}
         <a href={`tel:${tel}`} onClick={close} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#dbeafe", borderRadius: 12, textDecoration: "none", color: "#1e40af", fontWeight: 700 }}><span style={{ fontSize: 24 }}>📞</span> Appeler (téléphone)</a>
-        <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" onClick={close} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#d1fae5", borderRadius: 12, textDecoration: "none", color: "#065f46", fontWeight: 700 }}><span style={{ fontSize: 24 }}>💬</span> Message WhatsApp</a>
-        <a href={`https://wa.me/${wa}?call`} target="_blank" rel="noreferrer" onClick={close} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#dcfce7", borderRadius: 12, textDecoration: "none", color: "#15803d", fontWeight: 700 }}><span style={{ fontSize: 24 }}>📲</span> Ouvrir WhatsApp</a>
+        <a href={`whatsapp://send?phone=${wa}`} onClick={close} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#d1fae5", borderRadius: 12, textDecoration: "none", color: "#065f46", fontWeight: 700 }}><span style={{ fontSize: 24 }}>💬</span> Message WhatsApp</a>
+        <a href={`whatsapp://send?phone=${wa}`} onClick={close} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#dcfce7", borderRadius: 12, textDecoration: "none", color: "#15803d", fontWeight: 700 }}><span style={{ fontSize: 24 }}>📲</span> Ouvrir WhatsApp</a>
         <a href={`sms:${tel}`} onClick={close} style={{ display: "flex", alignItems: "center", gap: 12, padding: 16, background: "#f3f4f6", borderRadius: 12, textDecoration: "none", color: "#374151", fontWeight: 700 }}><span style={{ fontSize: 24 }}>✉️</span> SMS</a>
       </div>
     </Modal>
@@ -5231,6 +5240,9 @@ function AppInner() {
 
   // Lien public du formulaire de demande de devis (partagé aux clients)
   const DEVIS_PUBLIC_URL = `${window.location.origin}/devis.html`;
+  // Aperçu du formulaire dans une fenêtre interne : en PWA iOS, window.open vers une page du
+  // même domaine REMPLACE l'app (aucun bouton pour revenir, seul le swipe fonctionne).
+  const [showDevisPreview, setShowDevisPreview] = useState(false);
   const shareDevisLink = async () => {
     if (navigator.share) {
       try { await navigator.share({ title: "Demande de devis EventDream", url: DEVIS_PUBLIC_URL }); return; }
@@ -5541,7 +5553,7 @@ function AppInner() {
           {view === "orders" && <Btn variant="primary" size="sm" onClick={() => { setEditOrder(null); setShowForm(true); }} style={{ flexShrink: 0, whiteSpace: "nowrap" }}><span style={{ width: 14, height: 14 }}>{I.plus}</span> Nouveau</Btn>}
           {view === "devisEnAttente" && (
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-              <Btn variant="secondary" size="sm" onClick={() => window.open(DEVIS_PUBLIC_URL, "_blank")} style={{ whiteSpace: "nowrap" }}>🌐 Ouvrir</Btn>
+              <Btn variant="secondary" size="sm" onClick={() => setShowDevisPreview(true)} style={{ whiteSpace: "nowrap" }}>🌐 Ouvrir</Btn>
               <Btn variant="primary" size="sm" onClick={shareDevisLink} style={{ whiteSpace: "nowrap" }}>🔗 Partager</Btn>
             </div>
           )}
@@ -5692,20 +5704,26 @@ function AppInner() {
                     </div>
                     {(order.status === "Non confirmé" || order.status === "Devis" || order.status === "Brouillon") && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-                        {order.paymentDeclaredByClient && (
-                          <div style={{ background: "#fef9c3", border: "1.5px solid #fde68a", borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 800, color: "#92400e" }}>💰 Paiement déclaré par le client</div>
-                              <div style={{ fontSize: 11, color: "#92400e" }}>Vérifie sur {order.acompteMoyen || "PayPal/Revolut"} avant de confirmer</div>
+                        {order.paymentDeclaredByClient && (() => {
+                          const declared = parseFloat(order.acompte || 0);
+                          const pct = total > 0 && declared > 0 ? Math.round((declared / total) * 100) : 0;
+                          const MOYENS = { paypal: "💙 PayPal", virement: "🏦 Virement", revolut: "💳 Revolut", cb: "💳 CB Revolut", especes: "💵 Espèces", cheque: "📄 Chèque" };
+                          const moyenLbl = MOYENS[order.acompteMoyen || order.paymentMethod] || order.acompteMoyen || "";
+                          return (
+                            <div style={{ background: "#fef9c3", border: "1.5px solid #fde68a", borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: "#92400e" }}>💰 Paiement déclaré : {declared > 0 ? `${declared.toFixed(2)} €` : "montant inconnu"}{pct > 0 ? ` (${pct === 100 ? "100% — total" : `${pct}% — acompte`})` : ""}</div>
+                                <div style={{ fontSize: 11, color: "#92400e" }}>{moyenLbl ? `Via ${moyenLbl} — vérifie la réception avant de confirmer` : "Vérifie la réception avant de confirmer"}</div>
+                              </div>
+                              <Btn variant="primary" size="sm" onClick={() => updateStatus(order.id, "Confirmée")} style={{ background: "#10b981", flexShrink: 0 }}>✅ Confirmer</Btn>
                             </div>
-                            <Btn variant="primary" size="sm" onClick={() => updateStatus(order.id, "Confirmée")} style={{ background: "#10b981", flexShrink: 0 }}>✅ Confirmer</Btn>
-                          </div>
-                        )}
+                          );
+                        })()}
                         <div style={{ display: "flex", gap: 8 }}>
                           <Btn variant="secondary" size="sm" onClick={() => {
                             const link = `${window.location.origin}/confirm.html?id=${order.id}`;
                             const msg = `Bonjour ${order.clientName},\n\nVoici votre devis EventDream :\n${link}\n\nVous pouvez confirmer et payer votre acompte directement via ce lien. À bientôt !`;
-                            window.open(`https://wa.me/${(order.clientPhone||"").replace(/[\s\-\.\+]/g,"")}?text=${encodeURIComponent(msg)}`);
+                            window.location.href = `whatsapp://send?phone=${toWaNumber(order.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
                           }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
                           <Btn variant="secondary" size="sm" onClick={() => {
                             const link = `${window.location.origin}/confirm.html?id=${order.id}`;
@@ -5779,6 +5797,18 @@ function AppInner() {
       <Modal open={!!viewOrder} onClose={() => setViewOrder(null)} title="Fiche commande" wide>
         {viewOrder && <DeliverySheet order={viewOrder} settings={settings} onShare={sharePdf} stock={stock} onEncaisser={(o) => { setSoldeOrder(o); setSoldeMoyenSel("especes"); }} onDeletePhoto={deleteOrderPhoto} allOrders={orders} />}
       </Modal>
+
+      {/* Aperçu du formulaire de devis web dans une fenêtre interne avec un vrai bouton Fermer
+          (window.open remplacerait toute l'app en PWA iOS, sans moyen visible d'en sortir). */}
+      {showDevisPreview && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#f6f7f9", display: "flex", flexDirection: "column" }}>
+          <div style={{ background: "#1a1a2e", color: "#fff", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0, paddingTop: "max(12px, env(safe-area-inset-top))" }}>
+            <span style={{ fontSize: 15, fontWeight: 800 }}>🌐 Aperçu — Formulaire de devis</span>
+            <button onClick={() => setShowDevisPreview(false)} style={{ background: "#fff", color: "#1a1a2e", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: 14, flexShrink: 0 }}>✕ Fermer</button>
+          </div>
+          <iframe src={DEVIS_PUBLIC_URL} title="Formulaire de devis" style={{ flex: 1, width: "100%", border: "none" }} />
+        </div>
+      )}
     </div>
     {ConfirmUI}
     </>

@@ -43,17 +43,19 @@
     .etage-row span{font-size:14px;font-weight:600}
     .etage-row input{width:70px;margin:0;text-align:center;font-weight:800}
     .item-row{display:flex;flex-direction:column;gap:8px;padding:13px;background:#f8fafc;border-radius:12px;margin-bottom:8px}
-    .item-main{display:flex;align-items:center;gap:12px}
-    .item-thumb{width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0}
-    .item-icon{font-size:26px;width:46px;text-align:center;flex-shrink:0;line-height:46px}
-    .item-name{font-weight:700;font-size:14px}
-    .qty-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0}
-    .qty-btn{width:34px;height:34px;border-radius:10px;border:none;font-size:18px;font-weight:900;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+    .item-main{display:flex;align-items:center;gap:10px}
+    .item-thumb{width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0}
+    .item-icon{font-size:24px;width:42px;text-align:center;flex-shrink:0;line-height:42px}
+    .item-name{font-weight:700;font-size:14px;overflow-wrap:anywhere}
+    .qty-ctrl{display:flex;align-items:center;gap:5px;flex-shrink:0}
+    .qty-btn{width:32px;height:32px;border-radius:10px;border:none;font-size:17px;font-weight:900;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
     .qty-btn.plus{background:#dcfce7;color:var(--green)}
     .qty-btn.minus{background:#fee2e2;color:#ef4444}
-    .qty-input{width:62px;padding:6px 4px;border-radius:10px;border:1.5px solid var(--border);text-align:center;font-size:16px;font-weight:800;font-family:inherit;margin:0}
+    .qty-input{width:52px;padding:6px 2px;border-radius:10px;border:1.5px solid var(--border);text-align:center;font-size:16px;font-weight:800;font-family:inherit;margin:0}
     .opt-cb{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:600;background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px 12px;width:100%}
-    .opt-cb input{width:18px;height:18px;margin:0;cursor:pointer;flex-shrink:0}
+    /* Le reset global "input{-webkit-appearance:none}" supprime aussi le dessin de l'encoche des
+       cases à cocher (case qui semble ne jamais se cocher) : on restaure leur apparence native. */
+    .opt-cb input{width:20px;height:20px;margin:0;cursor:pointer;flex-shrink:0;-webkit-appearance:checkbox;appearance:auto;accent-color:#10b981}
     .cat-title{font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
     .recap-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
     .recap-row:last-of-type{border-bottom:none}
@@ -283,11 +285,10 @@ function render(){
 
   // ── ÉTAPE 2 ──
   else if(step===2){
-    const delPrice=calcDelivery();
-    const basePrice=calcBase();
-    const portePrice=basePrice+calcEtage();
-    const installPrice=basePrice+calcEtage()+calcInstall();
     const hasAddr=form.addrStatus==="ok";
+    // Les prix des niveaux ne sont PAS affichés ici : les surcoûts étage/installation dépendent
+    // des articles (pas encore choisis à cette étape) — un prix identique sur les 3 niveaux
+    // serait trompeur. Le prix final s'affiche au récapitulatif (étape 4).
     document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2>📅 ${t("s2")}</h2>
       <label>${t("date")} *</label>
@@ -317,17 +318,17 @@ function render(){
           <button class="niveau-card${form.niveau==="pied"?" sel":""}" onclick="setNiveau('pied')">
             <div class="ic">🚚</div>
             <div class="info"><div class="ttl">${t("niv_pied")}</div><div class="sub">${t("niv_pied_sub")}</div></div>
-            ${hasAddr?`<div class="prix">${basePrice.toFixed(2)} €</div>`:""}
+            
           </button>
           <button class="niveau-card${form.niveau==="porte"?" sel":""}" onclick="setNiveau('porte')">
             <div class="ic">🚪</div>
             <div class="info"><div class="ttl">${t("niv_porte")}</div><div class="sub">${t("niv_porte_sub")}</div></div>
-            ${hasAddr?`<div class="prix">${portePrice.toFixed(2)} €</div>`:""}
+            
           </button>
           <button class="niveau-card${form.niveau==="installation"?" sel":""}" onclick="setNiveau('installation')">
             <div class="ic">🛠️</div>
             <div class="info"><div class="ttl">${t("niv_install")}</div><div class="sub">${t("niv_install_sub")}</div></div>
-            ${hasAddr?`<div class="prix">${installPrice.toFixed(2)} €</div>`:""}
+            
           </button>
         </div>
 

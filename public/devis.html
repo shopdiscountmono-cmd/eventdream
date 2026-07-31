@@ -95,7 +95,7 @@ let form={
   trajetAller:true,trajetRetour:true,
   date:"",returnDate:"",
   items:{},options:{},freeText:"",
-  deliveryKm:0,deliveryMin:0,
+  deliveryKm:0,deliveryMin:0,addrStatus:"idle", // idle | checking | ok | error
   acomptePct:30
 };
 
@@ -116,7 +116,8 @@ acompte:"Acompte à payer",p30:"30% — réservation",p100:"100% — paiement co
 acompte_note:"Vous recevrez les instructions de paiement par message après validation.",
 submit:"Envoyer ma demande",next:"Suivant",back:"Retour",
 ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande de devis. Notre équipe vous recontacte très rapidement pour la confirmer.",
-req:"Merci de remplir les champs obligatoires",free_text:"Demande spéciale (optionnel)",free_text_ph:"Articles non listés, couleurs, précisions..."},
+req:"Merci de remplir les champs obligatoires",free_text:"Demande spéciale (optionnel)",free_text_ph:"Articles non listés, couleurs, précisions...",
+ret_err:"La date de retour doit être postérieure à la date de livraison/retrait"},
 en:{sub:"Online Quote Request",s1:"Your details",s2:"Date & Delivery",s3:"Your equipment",s4:"Summary",
 name:"Full name",phone:"Phone",email:"Email (optional)",address:"Delivery address",
 mode_liv:"Delivery",mode_ret:"Warehouse pickup",
@@ -133,7 +134,8 @@ acompte:"Deposit to pay",p30:"30% — reservation",p100:"100% — full payment",
 acompte_note:"You will receive payment instructions by message after validation.",
 submit:"Send my request",next:"Next",back:"Back",
 ok_title:"Request sent!",ok_text:"We have received your quote request. Our team will contact you shortly to confirm it.",
-req:"Please fill in the required fields",free_text:"Special request (optional)",free_text_ph:"Unlisted items, colors, details..."}};
+req:"Please fill in the required fields",free_text:"Special request (optional)",free_text_ph:"Unlisted items, colors, details...",
+ret_err:"Return date must be after the delivery/pickup date"}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
@@ -223,19 +225,44 @@ function calcSubtotal(){
 function calcTotal(){return calcSubtotal()+calcDelivery()}
 
 let debounceTimer=null;
+// Jeton incrémenté à chaque nouvelle saisie : permet d'ignorer une réponse API qui reviendrait
+// après qu'une saisie plus récente ait déjà lancé sa propre vérification (sinon une réponse
+// "en retard" peut écraser un statut plus à jour et afficher un message erroné).
+let addrReqToken=0;
 window.onAddrInput=val=>{
   form.address=val;
   clearTimeout(debounceTimer);
+  const myToken=++addrReqToken;
+  if(val.length<8){
+    form.addrStatus="idle";form.deliveryKm=0;form.deliveryMin=0;
+    updateAddrStatusDom();
+    return;
+  }
+  form.addrStatus="checking";
+  updateAddrStatusDom();
   debounceTimer=setTimeout(async()=>{
-    if(val.length<8)return;
-    const el=document.getElementById("addr-status");
-    if(el)el.textContent="📍 "+t("calcul");
     const res=await computeDistance(settings.warehouseAddress||"",val);
-    if(res){form.deliveryKm=res.km;form.deliveryMin=res.min;}
-    else{form.deliveryKm=0;form.deliveryMin=0;}
+    if(myToken!==addrReqToken)return; // réponse obsolète : une saisie plus récente a pris le relais
+    if(res){form.deliveryKm=res.km;form.deliveryMin=res.min;form.addrStatus="ok";}
+    else{form.deliveryKm=0;form.deliveryMin=0;form.addrStatus="error";}
     render();
   },900);
 };
+
+// Statut sous le champ adresse (couleur + texte) selon form.addrStatus. Appelé aussi en dehors
+// de render() (frappe en cours) pour donner un retour immédiat sans reconstruire toute l'étape.
+function addrStatusLabel(){
+  if(form.addrStatus==="checking")return{text:"📍 "+t("calcul"),color:"#94a3b8"};
+  if(form.addrStatus==="ok")return{text:"✅ Adresse validée",color:"#10b981"};
+  if(form.addrStatus==="error")return{text:"⚠️ "+t("addr_err"),color:"#f59e0b"};
+  return{text:"",color:"#94a3b8"};
+}
+function updateAddrStatusDom(){
+  const el=document.getElementById("addr-status");
+  if(!el)return;
+  const{text,color}=addrStatusLabel();
+  el.textContent=text;el.style.color=color;
+}
 
 function render(){
   const steps=[t("s1"),t("s2"),t("s3"),t("s4")];
@@ -259,7 +286,7 @@ function render(){
     const basePrice=calcBase();
     const portePrice=basePrice+calcEtage();
     const installPrice=basePrice+calcEtage()+calcInstall();
-    const hasAddr=form.deliveryKm>0;
+    const hasAddr=form.addrStatus==="ok";
     document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2>📅 ${t("s2")}</h2>
       <label>${t("date")} *</label>
@@ -276,7 +303,7 @@ function render(){
       ${form.mode==="livraison"?`
         <label>${t("address")} *</label>
         <input id="f-addr" value="${form.address}" placeholder="19 rue de la Paix, 94800 Villejuif" autocomplete="street-address" oninput="onAddrInput(this.value)" style="margin-bottom:4px"/>
-        <div id="addr-status" style="font-size:12px;font-weight:700;color:${hasAddr?"#10b981":"#94a3b8"};margin-bottom:16px">${hasAddr?"✅ Adresse validée":form.address.length>=8?"⚠️ "+t("addr_err"):""}</div>
+        <div id="addr-status" style="font-size:12px;font-weight:700;color:${addrStatusLabel().color};margin-bottom:16px">${addrStatusLabel().text}</div>
 
         <label>${t("trajet")}</label>
         <div class="trajet-row">
@@ -424,6 +451,16 @@ window.goStep2=()=>{
   const err=document.getElementById("err2");
   if(!form.date){err.textContent=t("req");err.style.display="block";return;}
   if(form.mode==="livraison"&&!form.address.trim()){err.textContent=t("req");err.style.display="block";return;}
+  // Garde-fou JS explicite : certains navigateurs (iOS Safari notamment) n'empêchent pas
+  // toujours la sélection d'une date antérieure malgré l'attribut "min" du champ HTML.
+  if(form.returnDate&&form.returnDate<=form.date){
+    // Corrige automatiquement au lendemain de la date de livraison pour débloquer le client
+    form.returnDate=nextDay(form.date);
+    render();
+    const err2=document.getElementById("err2");
+    if(err2){err2.textContent=t("ret_err");err2.style.display="block";}
+    return;
+  }
   step=3;render();
 };
 window.goStep3=()=>{

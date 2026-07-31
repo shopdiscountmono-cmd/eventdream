@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot, collection, writeBatch, deleteDoc, getDocs, query, orderBy } from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, uploadQRCode, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
+import { db, auth, createUserAsAdmin, registerPushNotifications, listenForegroundMessages, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, uploadQRCode, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.38.1 — devis.html pro (3 niveaux livraison, étage client, dates intelligentes) + sections devisEnAttente fonctionnelles (31/07/2026)";
+const APP_VERSION = "v3.39.0 — Fix devis.html (retour/lavage/étage) + banniere MAJ + badge app + partage devis web + alerte stock avant confirmation + cautionAmount + demande spéciale visible (31/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -2275,6 +2275,13 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
               </div>
             ))}
           </div>
+          {(order.freeTextRequest || order.notes) && (
+            <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: "#92400e", fontWeight: 700, marginBottom: 6 }}>📝 DEMANDE / NOTES</div>
+              {order.freeTextRequest && <div style={{ fontSize: 13, color: "#92400e" }}>{order.freeTextRequest}</div>}
+              {order.notes && order.notes !== order.freeTextRequest && <div style={{ fontSize: 13, color: "#92400e", marginTop: 4 }}>🗒️ {order.notes}</div>}
+            </div>
+          )}
           {(deliveryCostOf(order, settings) > 0 || order.etageActive || order.miseEnPlaceActive) && (
             <div style={{ background: "#eff6ff", borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: "#1e40af" }}>🚚 Frais de livraison</div>
@@ -5139,8 +5146,97 @@ function AppInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const touchStartX = useRef(null);
   // (shareModal retiré : sharePdf se contente désormais d'un téléchargement direct, sans fenêtre)
+  // ───────────────────────────────────────────────────────────
+  // Badge sur l'icône de l'app (pastille "1, 2, 3...") : compte les notifications push pas
+  // encore ouvertes (une par commande concernée). Décrémenté quand la commande est ouverte
+  // dans l'app. S'appuie sur l'API Badging (navigator.setAppBadge) : fonctionne sur PWA
+  // installée (Android/desktop, et iOS 16.4+ selon les versions — silencieux sinon).
+  // ───────────────────────────────────────────────────────────
+  const readUnseenNotifs = () => { try { return new Set(JSON.parse(localStorage.getItem("ed_unseenNotifOrders") || "[]")); } catch (e) { return new Set(); } };
+  const writeUnseenNotifs = (set) => { try { localStorage.setItem("ed_unseenNotifOrders", JSON.stringify([...set])); } catch (e) {} };
+  const applyAppBadge = (n) => { try { if ("setAppBadge" in navigator) { n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge(); } } catch (e) {} };
+  // Marque la commande comme "vue" : retire son id du compteur et ferme sa notification
+  // encore présente dans le centre de notifications (pour rester cohérent partout).
+  const markOrderSeen = (orderId) => {
+    const set = readUnseenNotifs();
+    if (set.delete(orderId)) { writeUnseenNotifs(set); applyAppBadge(set.size); }
+    try {
+      navigator.serviceWorker?.getRegistration("/firebase-messaging-sw.js")
+        .then(reg => reg ? reg.getNotifications() : [])
+        .then(list => (list || []).forEach(n => { if (n.data && n.data.orderId === orderId) n.close(); }))
+        .catch(() => {});
+    } catch (e) {}
+  };
+  useEffect(() => {
+    // À l'ouverture (et au retour au premier plan) : récupère les notifications encore dans le
+    // centre de notifications (reçues app fermée) pour compléter le compteur, puis met à jour le badge.
+    const syncBadge = async () => {
+      const set = readUnseenNotifs();
+      try {
+        const reg = await navigator.serviceWorker?.getRegistration("/firebase-messaging-sw.js");
+        const notifs = reg ? await reg.getNotifications() : [];
+        notifs.forEach(n => { const oid = n.data && n.data.orderId; if (oid) set.add(oid); });
+      } catch (e) {}
+      writeUnseenNotifs(set);
+      applyAppBadge(set.size);
+    };
+    syncBadge();
+    const onVis = () => { if (document.visibilityState === "visible") syncBadge(); };
+    document.addEventListener("visibilitychange", onVis);
+    // Notifications reçues app ouverte au premier plan : on incrémente aussi le compteur.
+    listenForegroundMessages((payload) => {
+      const oid = payload && payload.data && payload.data.orderId;
+      if (!oid) return;
+      const set = readUnseenNotifs();
+      set.add(oid);
+      writeUnseenNotifs(set);
+      applyAppBadge(set.size);
+    });
+    return () => document.removeEventListener("visibilitychange", onVis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ───────────────────────────────────────────────────────────
+  // Détection de nouvelle version déployée : compare le bundle JS référencé par le index.html
+  // du serveur (fetch sans cache) avec celui actuellement chargé. Si différent → bannière
+  // "Mettre à jour" (résout le cache PWA qui garde l'ancienne version ouverte indéfiniment).
+  // ───────────────────────────────────────────────────────────
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch("/index.html", { cache: "no-store" });
+        if (!res.ok) return;
+        const html = await res.text();
+        const m = html.match(/src="(\/assets\/[^"]+\.js)"/);
+        if (!m) return; // mode dev (pas de bundle hashé) : rien à comparer
+        const loaded = Array.from(document.scripts).some(sc => sc.src && sc.src.includes(m[1]));
+        if (!loaded) setUpdateAvailable(true);
+      } catch (e) {}
+    };
+    check();
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    const interval = setInterval(check, 15 * 60 * 1000);
+    return () => { document.removeEventListener("visibilitychange", onVis); clearInterval(interval); };
+  }, []);
+
+  // Lien public du formulaire de demande de devis (partagé aux clients)
+  const DEVIS_PUBLIC_URL = `${window.location.origin}/devis.html`;
+  const shareDevisLink = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: "Demande de devis EventDream", url: DEVIS_PUBLIC_URL }); return; }
+      catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(DEVIS_PUBLIC_URL); alert("🔗 Lien copié !"); }
+    catch (e) { window.prompt("Copiez le lien :", DEVIS_PUBLIC_URL); }
+  };
+
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
-  const toggleExpand = (id) => setExpandedOrders(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleExpand = (id) => { markOrderSeen(id); setExpandedOrders(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); };
+  // Ouverture du détail d'une commande (modal) : marque aussi la notification comme vue.
+  useEffect(() => { if (viewOrder && viewOrder.id) markOrderSeen(viewOrder.id); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewOrder]);
 
   // Pli/dépli des 3 groupes de la vue "Devis en attente" (0=web, 1=manuels, 2=brouillons).
   // Repliées par défaut, et l'état choisi par l'utilisateur est mémorisé sur cet appareil
@@ -5174,14 +5270,54 @@ function AppInner() {
   });
   const [askConfirm, ConfirmUI] = useConfirm();
   const deleteOrder = async (id) => { if (await askConfirm("Supprimer cette commande ?")) setOrders(prev => prev.filter(o => o.id !== id), true); };
-  const updateStatus = (id, status) => setOrders(prev => prev.map(o => {
-    if (o.id !== id) return o;
-    // Passage automatique en phase retour quand livré
-    const phase = ["Chez le client"].includes(status) ? "retour" : status === "Clôturée" ? "termine" : "livraison";
-    // Mémorise la date de clôture (référence pour la suppression auto des photos après X jours)
-    const closedAt = status === "Clôturée" && !o.closedAt ? new Date().toISOString() : o.closedAt;
-    return { ...o, status, phase, closedAt };
-  }));
+  const updateStatus = async (id, status) => {
+    // Garde-fou AVANT acceptation : si la commande passe d'un état "devis" (qui ne réserve pas
+    // le stock) à un état actif (qui le réserve), on vérifie la disponibilité sur la période
+    // et on prévient — l'utilisateur peut quand même confirmer en connaissance de cause.
+    const current = orders.find(x => x.id === id);
+    if (current) {
+      const wasInactive = ["Brouillon", "Devis", "Non confirmé"].includes(current.status);
+      const becomesActive = !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(status);
+      if (wasInactive && becomesActive) {
+        const shortage = stockShortage(current, orders, stock);
+        if (shortage.length > 0) {
+          const lines = shortage.map(s => `${s.name} (manque ${s.manque})`).join(", ");
+          const ok = await askConfirm(`⚠️ Stock insuffisant sur la période : ${lines}.\n\nConfirmer la commande quand même ?`);
+          if (!ok) return;
+        }
+      }
+    }
+    setOrders(prev => prev.map(o => {
+      if (o.id !== id) return o;
+      // Passage automatique en phase retour quand livré
+      const phase = ["Chez le client"].includes(status) ? "retour" : status === "Clôturée" ? "termine" : "livraison";
+      // Mémorise la date de clôture (référence pour la suppression auto des photos après X jours)
+      const closedAt = status === "Clôturée" && !o.closedAt ? new Date().toISOString() : o.closedAt;
+      return { ...o, status, phase, closedAt };
+    }));
+  };
+
+  // Garantit que chaque commande ouverte porte son montant de caution calculé (cautionAmount),
+  // pour que la page publique confirm.html puisse afficher le montant exact au client sans
+  // dupliquer le barème. Convergent : n'écrit que si la valeur stockée diffère du calcul.
+  useEffect(() => {
+    if (!orders.length || !stock.length) return;
+    const needsUpdate = orders.some(o => {
+      if (o.status === "Clôturée") return false;
+      const c = Math.round(cautionCost(o, stock) * 100) / 100;
+      const stored = parseFloat(o.cautionAmount);
+      return !(Number.isFinite(stored) && Math.abs(stored - c) < 0.005);
+    });
+    if (!needsUpdate) return;
+    setOrders(prev => prev.map(o => {
+      if (o.status === "Clôturée") return o;
+      const c = Math.round(cautionCost(o, stock) * 100) / 100;
+      const stored = parseFloat(o.cautionAmount);
+      if (Number.isFinite(stored) && Math.abs(stored - c) < 0.005) return o;
+      return { ...o, cautionAmount: c };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, stock]);
 
   const saveRetour = (result) => {
     setOrders(prev => prev.map(o => o.id === result.orderId ? {
@@ -5386,9 +5522,21 @@ function AppInner() {
       </div>
 
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden", height: "100%" }}>
+        {updateAvailable && (
+          <div style={{ background: "#7c3aed", color: "#fff", padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 800 }}>🔄 Nouvelle version disponible</span>
+            <button onClick={() => window.location.reload()} style={{ background: "#fff", color: "#7c3aed", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: 13, flexShrink: 0 }}>Mettre à jour</button>
+          </div>
+        )}
         <div style={{ background: "#fff", borderBottom: "1px solid #eee", padding: "0 16px", height: 64, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, color: "#1a1a2e", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{navItems.find(n => n.id === view)?.label}</h1>
           {view === "orders" && <Btn variant="primary" size="sm" onClick={() => { setEditOrder(null); setShowForm(true); }} style={{ flexShrink: 0, whiteSpace: "nowrap" }}><span style={{ width: 14, height: 14 }}>{I.plus}</span> Nouveau</Btn>}
+          {view === "devisEnAttente" && (
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <Btn variant="secondary" size="sm" onClick={() => window.open(DEVIS_PUBLIC_URL, "_blank")} style={{ whiteSpace: "nowrap" }}>🌐 Ouvrir</Btn>
+              <Btn variant="primary" size="sm" onClick={shareDevisLink} style={{ whiteSpace: "nowrap" }}>🔗 Partager</Btn>
+            </div>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: 24, minWidth: 0 }}>
@@ -5517,6 +5665,12 @@ function AppInner() {
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
                       {order.items.map(item => <span key={item.id} style={{ background: "#f4f5f7", borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{item.icon} {item.name} × {item.qty}</span>)}
                     </div>
+                    {(order.freeTextRequest || order.notes) && (
+                      <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", flexDirection: "column", gap: 4 }}>
+                        {order.freeTextRequest && <div>📝 <strong>Demande client :</strong> {order.freeTextRequest}</div>}
+                        {order.notes && order.notes !== order.freeTextRequest && <div>🗒️ <strong>Notes :</strong> {order.notes}</div>}
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
                       <Sel value={order.status} onChange={v => updateStatus(order.id, v)} options={STATUS_FLOW.map(s => ({ value: s, label: s }))} />
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

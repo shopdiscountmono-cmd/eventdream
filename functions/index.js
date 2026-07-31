@@ -218,6 +218,45 @@ exports.onOrderValidated = onDocumentWritten(
 );
 
 // ───────────────────────────────────────────────────────────
+// 1bis) Notification "Paiement déclaré à vérifier"
+//    Envoyée à tous les admins (livreurs exclus) quand un client clique
+//    "J'ai effectué le paiement" sur confirm.html (paymentDeclaredByClient → true).
+// ───────────────────────────────────────────────────────────
+exports.onPaymentDeclared = onDocumentWritten(
+  { document: "orders/{orderId}", region: REGION },
+  async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return; // suppression : rien à faire
+
+    // Ne se déclenche que sur la TRANSITION false/absent → true (pas à chaque écriture)
+    if (!after.paymentDeclaredByClient) return;
+    if (before && before.paymentDeclaredByClient) return;
+
+    // Anti-doublon (Eventarc peut livrer le même évènement deux fois)
+    const notifiedRef = db.collection("app").doc("notifiedAlerts");
+    const notifiedSnap = await notifiedRef.get();
+    const notified = notifiedSnap.exists ? (notifiedSnap.data().value || {}) : {};
+    const alertKey = `${event.params.orderId}:paiementDeclare`;
+    if (notified[alertKey]) return;
+
+    // Montant et moyen déclarés (écrits par confirm.html lors de la déclaration)
+    const montant = after.acompte != null && parseFloat(after.acompte) > 0 ? ` — ${parseFloat(after.acompte).toFixed(2)} €` : "";
+    const moyen = after.acompteMoyen || after.paymentMethod || "";
+    const moyenLabel = { paypal: "PayPal", virement: "Virement", revolut: "Revolut", cb: "CB Revolut", especes: "Espèces", cheque: "Chèque" }[moyen] || moyen;
+
+    await sendToAll(
+      "💰 Paiement déclaré à vérifier",
+      `${after.clientName || "Client"}${montant}${moyenLabel ? ` (${moyenLabel})` : ""}`,
+      { orderId: event.params.orderId, kind: "paiementDeclare" },
+      { excludeRoles: ["livreur"] }
+    );
+
+    await notifiedRef.set({ value: { ...notified, [alertKey]: true } });
+  }
+);
+
+// ───────────────────────────────────────────────────────────
 // 2) Vérification planifiée : livraison / retrait / retour qui approchent
 //    Tourne toutes les 15 minutes.
 // ───────────────────────────────────────────────────────────
@@ -424,8 +463,11 @@ exports.syncOrdersSheet = onDocumentWritten(
   async () => { await syncOrdersToSheet(); }
 );
 
+// ⚠️ CORRECTIF : ce trigger écoutait encore "app/expenses" (ancienne structure monolithique,
+// supprimée lors de la migration) — il ne se déclenchait donc PLUS JAMAIS depuis le 14/07.
+// Il écoute désormais les documents individuels de la collection "expenses".
 exports.syncExpensesSheet = onDocumentWritten(
-  { document: "app/expenses", region: REGION, serviceAccount: SHEETS_SERVICE_ACCOUNT },
+  { document: "expenses/{expenseId}", region: REGION, serviceAccount: SHEETS_SERVICE_ACCOUNT },
   async () => { await syncExpensesToSheet(); }
 );
 

@@ -34,8 +34,21 @@ messaging.onBackgroundMessage((payload) => {
     data: payload.data || {},
     vibrate: [200, 100, 200],
   };
-  self.registration.showNotification(title, options);
+  // Après affichage : met à jour la pastille de l'icône (badge) avec le nombre de
+  // notifications encore visibles (app fermée : c'est le seul compteur disponible ici).
+  return self.registration.showNotification(title, options).then(updateAppBadge);
 });
+
+// Synchronise la pastille de l'icône avec le nombre de notifications encore affichées.
+// Silencieux si l'API Badging n'est pas supportée (anciens navigateurs / iOS < 16.4).
+function updateAppBadge() {
+  return self.registration.getNotifications().then((list) => {
+    if ("setAppBadge" in self.navigator) {
+      const n = list.length;
+      return (n > 0 ? self.navigator.setAppBadge(n) : self.navigator.clearAppBadge()).catch(() => {});
+    }
+  }).catch(() => {});
+}
 
 // Au clic sur la notification : ouvre ou ramène l'app au premier plan
 self.addEventListener("notificationclick", (event) => {
@@ -46,6 +59,6 @@ self.addEventListener("notificationclick", (event) => {
         return clientsArr[0].focus();
       }
       return self.clients.openWindow("/");
-    })
+    }).then(updateAppBadge)
   );
 });

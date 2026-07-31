@@ -42,7 +42,8 @@
     .etage-row{display:flex;align-items:center;gap:12px;background:#f8fafc;border-radius:12px;padding:14px;margin-bottom:16px}
     .etage-row span{font-size:14px;font-weight:600}
     .etage-row input{width:70px;margin:0;text-align:center;font-weight:800}
-    .item-row{display:flex;align-items:center;gap:12px;padding:13px;background:#f8fafc;border-radius:12px;margin-bottom:8px}
+    .item-row{display:flex;flex-direction:column;gap:8px;padding:13px;background:#f8fafc;border-radius:12px;margin-bottom:8px}
+    .item-main{display:flex;align-items:center;gap:12px}
     .item-thumb{width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0}
     .item-icon{font-size:26px;width:46px;text-align:center;flex-shrink:0;line-height:46px}
     .item-name{font-weight:700;font-size:14px}
@@ -51,8 +52,8 @@
     .qty-btn.plus{background:#dcfce7;color:var(--green)}
     .qty-btn.minus{background:#fee2e2;color:#ef4444}
     .qty-input{width:62px;padding:6px 4px;border-radius:10px;border:1.5px solid var(--border);text-align:center;font-size:16px;font-weight:800;font-family:inherit;margin:0}
-    .opt-cb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-top:6px;font-weight:600}
-    .opt-cb input{width:16px;height:16px;margin:0;cursor:pointer}
+    .opt-cb{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:600;background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px 12px;width:100%}
+    .opt-cb input{width:18px;height:18px;margin:0;cursor:pointer;flex-shrink:0}
     .cat-title{font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
     .recap-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
     .recap-row:last-of-type{border-bottom:none}
@@ -292,7 +293,7 @@ function render(){
       <label>${t("date")} *</label>
       <input id="f-date" type="date" value="${form.date}" min="${TODAY}" onchange="onDateChange(this.value)"/>
       <label>${t("retDate")}</label>
-      <input id="f-retdate" type="date" value="${form.returnDate}" min="${nextDay(form.date)}" onchange="form.returnDate=this.value"/>
+      <input id="f-retdate" type="date" value="${form.returnDate}" min="${nextDay(form.date)}" onchange="onRetDateChange(this.value)"/>
 
       <label>Mode *</label>
       <div class="mode-grid">
@@ -333,12 +334,12 @@ function render(){
         ${form.niveau!=="pied"?`
         <div class="etage-row">
           <span>🪜 ${t("etage_q")}</span>
-          <input type="number" inputmode="numeric" min="0" value="${form.etage}" placeholder="0" onchange="form.etage=this.value;render()"/>
+          <input type="number" inputmode="numeric" min="0" value="${form.etage}" placeholder="0" onchange="onEtageChange(this.value)"/>
           <span style="font-size:11px;color:var(--muted)">${t("etage_hint")}</span>
         </div>`:""}
       `:""}
       <div id="err2" class="err" style="display:none"></div>
-      <div class="nav-btns"><button class="back-btn" onclick="step=1;render()">← ${t("back")}</button><button class="next-btn" onclick="goStep2()">${t("next")} →</button></div>
+      <div class="nav-btns"><button class="back-btn" onclick="goBackTo(1)">← ${t("back")}</button><button class="next-btn" onclick="goStep2()">${t("next")} →</button></div>
     </div>`;
   }
 
@@ -353,21 +354,21 @@ function render(){
         const thumb=item.imageUrl?`<img src="${item.imageUrl}" class="item-thumb"/>`:`<div class="item-icon">${item.icon||"📦"}</div>`;
         const washPrice=parseFloat(item.cleaningPrice)||0;
         html+=`<div class="item-row">
-          ${thumb}
-          <div style="flex:1;min-width:0">
-            <div class="item-name">${item.name}</div>
-            ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/>🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
+          <div class="item-main">
+            ${thumb}
+            <div style="flex:1;min-width:0"><div class="item-name">${item.name}</div></div>
+            <div class="qty-ctrl">
+              <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
+              <input class="qty-input" type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)"/>
+              <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
+            </div>
           </div>
-          <div class="qty-ctrl">
-            <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
-            <input class="qty-input" type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)"/>
-            <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
-          </div>
+          ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/>🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
         </div>`;
       });
     });
     html+=`<div style="margin-top:16px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" style="resize:vertical">${form.freeText||""}</textarea></div>`;
-    html+=`<div class="nav-btns"><button class="back-btn" onclick="saveFree();step=2;render()">← ${t("back")}</button><button class="next-btn" onclick="goStep3()">${t("next")} →</button></div></div>`;
+    html+=`<div class="nav-btns"><button class="back-btn" onclick="goBackTo(2)">← ${t("back")}</button><button class="next-btn" onclick="goStep3()">${t("next")} →</button></div></div>`;
     document.getElementById("app").innerHTML=html;
   }
 
@@ -403,7 +404,7 @@ function render(){
     </div>
     <div id="err4" class="err" style="display:none"></div>
     <button class="submit-btn" id="submit-btn" onclick="submitForm()">✅ ${t("submit")}</button>
-    <div class="nav-btns"><button class="back-btn" style="width:100%" onclick="step=3;render()">← ${t("back")}</button></div>`;
+    <div class="nav-btns"><button class="back-btn" style="width:100%" onclick="goBackTo(3)">← ${t("back")}</button></div>`;
   }
 }
 
@@ -435,6 +436,23 @@ window.setQty=(id,qty)=>{form.items[id]=Math.max(0,qty);render()};
 window.toggleOpt=(k,v)=>{form.options[k]=v;render()};
 window.setPct=p=>{form.acomptePct=p;render()};
 window.saveFree=()=>{form.freeText=document.getElementById("f-free")?.value||form.freeText};
+
+// ⚠️ Les handlers inline (onclick="...") s'exécutent dans le scope GLOBAL : ils ne voient pas
+// les variables du module (step, form, render). Tout handler inline doit donc passer par une
+// fonction exposée sur window — sinon il échoue silencieusement (cause du bug "bouton Retour
+// inopérant" et "étage jamais pris en compte").
+window.goBackTo=n=>{
+  // Sauvegarde les champs de l'étape courante avant de revenir en arrière
+  if(step===2){
+    form.date=document.getElementById("f-date")?.value||form.date;
+    form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
+    if(form.mode==="livraison")form.address=document.getElementById("f-addr")?.value||form.address;
+  }
+  if(step===3)saveFree();
+  step=n;render();
+};
+window.onRetDateChange=v=>{form.returnDate=v};
+window.onEtageChange=v=>{form.etage=v;render()};
 
 window.goStep1=()=>{
   form.name=document.getElementById("f-name")?.value||"";

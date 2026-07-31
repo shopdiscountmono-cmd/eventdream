@@ -27,6 +27,7 @@
     .pay-btn{width:100%;padding:16px;border-radius:14px;border:none;background:#1a1a2e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px}
     .qr-box{text-align:center;padding:16px;background:#f8f9fa;border-radius:12px;margin-top:12px}
     .qr-box img{width:180px;height:180px;border-radius:10px;object-fit:contain;background:#fff}
+    .paylink{display:block;padding:15px 20px;color:#fff;border-radius:12px;font-weight:800;font-size:15px;text-decoration:none;text-align:center}
     .method-tabs{display:flex;gap:8px;margin-bottom:12px}
     .method-tab{flex:1;padding:10px;border-radius:10px;border:1.5px solid #e5e7eb;background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
     .method-tab.active{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
@@ -54,7 +55,11 @@ import{getFirestore,doc,getDoc,updateDoc}from"https://www.gstatic.com/firebasejs
 const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
 const db=getFirestore(initializeApp(cfg));
 let lang="fr",order=null,settings=null,pct=30,method="revolut";
-const T={fr:{sub:"Confirmation de votre devis",title:"Votre devis",items:"Articles",total:"Total",date:"Date",ret:"Retour",mode_liv:"🚚 Livraison",mode_ret:"🏠 Retrait entrepôt",choose:"Choisir le montant à payer",p30:"30% d'acompte — réservation",p100:"100% — paiement complet",pay:"Payer avec",scan:"Scannez ce QR code pour payer",amt:"Montant :",iban:"IBAN",copy:"📋 Copier l'IBAN",btn:"✅ J'ai effectué le paiement",legal:"En cliquant, je confirme avoir effectué le paiement du montant indiqué. Le devis sera validé après réception et vérification du paiement par EventDream.",ok_title:"Merci pour votre déclaration de paiement !",ok_text:"Votre paiement est en cours de vérification. Vous recevrez une confirmation dès que nous aurons reçu votre règlement. À très bientôt !",err:"Devis introuvable.",already:"Votre paiement est en cours de vérification. Merci !",cond:"En confirmant, vous acceptez les conditions générales de location."},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",legal:"By clicking, I confirm having made the payment of the indicated amount. The quote will be validated after receipt and verification of your payment by EventDream.",ok_title:"Thank you for your payment declaration!",ok_text:"Your payment is being verified. You will receive a confirmation once we have received your payment. See you soon!",err:"Quote not found.",already:"Your payment is being verified. Thank you!",cond:"By confirming, you agree to the rental terms."}};
+const T={fr:{sub:"Confirmation de votre devis",title:"Votre devis",items:"Articles",total:"Total",date:"Date",ret:"Retour",mode_liv:"🚚 Livraison",mode_ret:"🏠 Retrait entrepôt",choose:"Choisir le montant à payer",p30:"30% d'acompte — réservation",p100:"100% — paiement complet",pay:"Payer avec",scan:"Scannez ce QR code pour payer",amt:"Montant :",iban:"IBAN",copy:"📋 Copier l'IBAN",btn:"✅ J'ai effectué le paiement",legal:"En cliquant, je confirme avoir effectué le paiement du montant indiqué. Le devis sera validé après réception et vérification du paiement par EventDream.",ok_title:"Merci pour votre déclaration de paiement !",ok_text:"Votre paiement est en cours de vérification. Vous recevrez une confirmation dès que nous aurons reçu votre règlement. À très bientôt !",err:"Devis introuvable.",already:"Votre paiement est en cours de vérification. Merci !",cond:"En confirmant, vous acceptez les conditions générales de location.",
+paybtn:"Payer",scan2:"Ou scannez ce QR code depuis un autre appareil",
+caution:"🔒 Caution à prévoir",caution_sub:"À prévoir le jour de la livraison / du retrait — restituée à la fin de la location (hors casse)"},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",legal:"By clicking, I confirm having made the payment of the indicated amount. The quote will be validated after receipt and verification of your payment by EventDream.",ok_title:"Thank you for your payment declaration!",ok_text:"Your payment is being verified. You will receive a confirmation once we have received your payment. See you soon!",err:"Quote not found.",already:"Your payment is being verified. Thank you!",cond:"By confirming, you agree to the rental terms.",
+paybtn:"Pay",scan2:"Or scan this QR code from another device",
+caution:"🔒 Security deposit",caution_sub:"Required on delivery / pickup day — refunded at the end of the rental (unless damage)"}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
@@ -66,19 +71,34 @@ function render(){
   const del=parseFloat(order.deliveryPriceManual)||0;
   const sub=(order.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseInt(i.qty)||0),0);
   const disc=order.discountType==="percent"?sub*(parseFloat(order.discountValue)||0)/100:(parseFloat(order.discountValue)||0);
+  // Caution : montant exact calculé par l'app EventDream et stocké sur la commande
+  // (champ cautionAmount) — le client est informé AVANT le jour de la livraison/du retrait.
+  const cautionAmt=parseFloat(order.cautionAmount)||0;
+  const cautionBox=cautionAmt>0?`<div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px 14px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="min-width:0"><div style="font-size:12px;color:#6d28d9;font-weight:800">${t("caution")}</div><div style="font-size:11px;color:#7c3aed;margin-top:3px;line-height:1.4">${t("caution_sub")}</div></div><div style="font-size:19px;font-weight:900;color:#6d28d9;white-space:nowrap">${cautionAmt.toFixed(2)} €</div></div>`:"";
   const methods=[];
-  if(settings.revolutQR)methods.push(["revolut","💳 Revolut"]);
-  if(settings.paypalQR)methods.push(["paypal","💙 PayPal"]);
+  // Une méthode est proposée dès qu'un lien OU un QR est configuré (avant : le QR était
+  // obligatoire, donc un lien seul n'apparaissait jamais).
+  if(settings.revolutQR||settings.revolutLink)methods.push(["revolut","💳 Revolut"]);
+  if(settings.paypalQR||settings.paypalLink)methods.push(["paypal","💙 PayPal"]);
   if(settings.iban)methods.push(["virement","🏦 Virement"]);
   if(methods.length&&!methods.find(m=>m[0]===method))method=methods[0]?.[0];
   const tabs=methods.length>1?`<div class="method-tabs">${methods.map(([k,l])=>`<button class="method-tab${method===k?" active":""}" onclick="setM('${k}')">${l}</button>`).join("")}</div>`:"";
+  // Construit un lien de paiement avec montant : revolut.me/xxx/99.75 · paypal.me/xxx/99.75EUR
+  // (devise explicite pour PayPal, sinon le montant est interprété dans la devise du compte).
+  const payLink=(base,curr)=>{if(!base)return"";return`${String(base).replace(/\/+$/,"")}/${acompte.toFixed(2)}${curr||""}`};
   let qr="";
-  if(method==="revolut"&&settings.revolutQR)qr=`<div class="qr-box"><div style="font-size:12px;color:#666;margin-bottom:8px">${t("scan")}</div><div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div><img src="${settings.revolutQR}" style="margin-top:12px"/>${settings.revolutLink?`<div style="margin-top:10px"><a href="${settings.revolutLink}/${acompte.toFixed(2)}" target="_blank" style="display:inline-block;padding:10px 20px;background:#1a1a2e;color:#fff;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none">💳 Payer ${acompte.toFixed(2)} € via Revolut →</a></div>`:""}`;
-  else if(method==="paypal"&&settings.paypalQR)qr=`<div class="qr-box"><div style="font-size:12px;color:#666;margin-bottom:8px">${t("scan")}</div><div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div><img src="${settings.paypalQR}" style="margin-top:12px"/>${settings.paypalLink?`<div style="margin-top:10px"><a href="${settings.paypalLink}/${acompte.toFixed(2)}" target="_blank" style="display:inline-block;padding:10px 20px;background:#003087;color:#fff;border-radius:10px;font-weight:700;font-size:14px;text-decoration:none">💙 Payer ${acompte.toFixed(2)} € via PayPal →</a></div>`:""}`;
+  if(method==="revolut"&&(settings.revolutQR||settings.revolutLink)){
+    const link=payLink(settings.revolutLink);
+    qr=`<div class="qr-box">${link?`<a href="${link}" target="_blank" rel="noopener" class="paylink" style="background:#1a1a2e">💳 ${t("paybtn")} ${acompte.toFixed(2)} € →</a>`:`<div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div>`}${settings.revolutQR?`<div style="font-size:12px;color:#666;margin:14px 0 8px">${link?t("scan2"):t("scan")}</div><img src="${settings.revolutQR}"/>`:""}</div>`;
+  }
+  else if(method==="paypal"&&(settings.paypalQR||settings.paypalLink)){
+    const link=payLink(settings.paypalLink,"EUR");
+    qr=`<div class="qr-box">${link?`<a href="${link}" target="_blank" rel="noopener" class="paylink" style="background:#003087">💙 ${t("paybtn")} ${acompte.toFixed(2)} € →</a>`:`<div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div>`}${settings.paypalQR?`<div style="font-size:12px;color:#666;margin:14px 0 8px">${link?t("scan2"):t("scan")}</div><img src="${settings.paypalQR}"/>`:""}</div>`;
+  }
   else if(method==="virement"&&settings.iban)qr=`<div class="iban-box"><div style="font-size:12px;color:#666">${t("iban")}</div><div class="iban-val">${settings.iban}</div><div style="font-size:12px;color:#666;margin-bottom:8px">${t("amt")} <strong>${acompte.toFixed(2)} €</strong></div><button class="copy-btn" onclick="navigator.clipboard.writeText('${settings.iban}')">${t("copy")}</button></div>`;
   document.getElementById("app").innerHTML=`
     <div class="header"><div class="lbl">${t("title")}</div><div class="id">${order.id}</div><div class="client">${order.clientName}</div></div>
-    <div class="card"><h2>📋 ${t("items")}</h2>${items}${disc>0?`<div class="row"><span style="color:#666">Remise</span><span style="font-weight:700;color:#10b981">−${disc.toFixed(2)} €</span></div>`:""}${del>0?`<div class="row"><span style="color:#666">🚚 Livraison</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}<div class="row" style="font-size:16px"><span><strong>${t("total")}</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div><div class="row"><span style="color:#666">${t("date")}</span><span style="font-weight:700">${fmtD(order.deliveryDate)}</span></div>${order.returnDate?`<div class="row"><span style="color:#666">${t("ret")}</span><span style="font-weight:700">${fmtD(order.returnDate)}</span></div>`:""}<div class="row"><span style="color:#666">Mode</span><span style="font-weight:700">${order.deliveryMode==="livraison"?t("mode_liv"):t("mode_ret")}</span></div></div>
+    <div class="card"><h2>📋 ${t("items")}</h2>${items}${disc>0?`<div class="row"><span style="color:#666">Remise</span><span style="font-weight:700;color:#10b981">−${disc.toFixed(2)} €</span></div>`:""}${del>0?`<div class="row"><span style="color:#666">🚚 Livraison</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}<div class="row" style="font-size:16px"><span><strong>${t("total")}</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div><div class="row"><span style="color:#666">${t("date")}</span><span style="font-weight:700">${fmtD(order.deliveryDate)}</span></div>${order.returnDate?`<div class="row"><span style="color:#666">${t("ret")}</span><span style="font-weight:700">${fmtD(order.returnDate)}</span></div>`:""}<div class="row"><span style="color:#666">Mode</span><span style="font-weight:700">${order.deliveryMode==="livraison"?t("mode_liv"):t("mode_ret")}</span></div>${cautionBox}</div>
     <div class="card"><h2>💰 ${t("choose")}</h2><button class="choice-btn${pct===30?" sel":""}" onclick="setPct(30)">30% — ${(total*.3).toFixed(2)} € (${t("p30")})</button><button class="choice-btn${pct===100?" sel":""}" onclick="setPct(100)">100% — ${total.toFixed(2)} € (${t("p100")})</button></div>
     <div class="card"><h2>💳 ${t("pay")}</h2>${tabs}<div class="total-box"><div class="lbl">${t("amt")}</div><div class="amt">${acompte.toFixed(2)} €</div></div>${qr}<div style="background:#fef9c3;border-radius:10px;padding:12px;font-size:12px;color:#92400e;margin-top:12px;line-height:1.5">${t("legal")}</div><button class="pay-btn" onclick="doConfirm()">${t("btn")}</button></div>
     <p class="cond">${t("cond")}</p>`;
@@ -111,6 +131,11 @@ window.doConfirm=async()=>{
     settings=sSnap.exists()?(sSnap.data().value||sSnap.data()||{}):{};
     if(["Confirmée","Préparée","Chez le client","Clôturée"].includes(order.status)){
       document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">✅</div><h2>${t("already")}</h2></div>`;return;
+    }
+    // Paiement déjà déclaré (le client revient sur le lien) : on affiche l'écran d'attente
+    // au lieu du formulaire, pour éviter une double déclaration.
+    if(order.paymentDeclaredByClient){
+      document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">⏳</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;return;
     }
     render();
   }catch(e){document.getElementById("app").innerHTML=`<div class="err">Erreur : ${e.message}</div>`;}

@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.39.0 — Fix devis.html (retour/lavage/étage) + banniere MAJ + badge app + partage devis web + alerte stock avant confirmation + cautionAmount + demande spéciale visible (31/07/2026)";
+const APP_VERSION = "v3.39.1 — Champs lien Revolut/PayPal ajoutés dans Réglages → Paiement (31/07/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -4503,6 +4503,10 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
               ) : (
                 <QRUploadButton label="📷 Ajouter la photo du QR code Revolut" onUploaded={url => setL("revolutQR", url)} name="revolut" />
               )}
+              <div style={{ marginTop: 12 }}>
+                <Inp label="Lien Revolut (revolut.me)" value={local.revolutLink || ""} onChange={v => setL("revolutLink", v)} placeholder="https://revolut.me/tonidentifiant" />
+                <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>💡 Affiché comme bouton cliquable sur la page de paiement client — le montant est ajouté automatiquement (ex : /95.55). Ton identifiant Revolut se trouve dans l'app → Profil → "Partager mon compte".</div>
+              </div>
               <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Dans l'app Revolut → Profil → "Recevoir" → capture d'écran du QR code.</div>
             </div>
 
@@ -4516,6 +4520,10 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
               ) : (
                 <QRUploadButton label="📷 Ajouter la photo du QR code PayPal" onUploaded={url => setL("paypalQR", url)} name="paypal" />
               )}
+              <div style={{ marginTop: 12 }}>
+                <Inp label="Lien PayPal.Me" value={local.paypalLink || ""} onChange={v => setL("paypalLink", v)} placeholder="https://paypal.me/tonidentifiant" />
+                <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>💡 Affiché comme bouton cliquable sur la page de paiement client — le montant et la devise EUR sont ajoutés automatiquement (ex : /95.55EUR). Crée ton lien PayPal.Me sur paypal.me si tu n'en as pas encore.</div>
+              </div>
               <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Dans l'app PayPal → Scanner → "Mon code QR" → capture d'écran.</div>
             </div>
           </div>

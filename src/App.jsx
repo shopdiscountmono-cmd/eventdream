@@ -5142,6 +5142,23 @@ function AppInner() {
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
   const toggleExpand = (id) => setExpandedOrders(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  // Pli/dépli des 3 groupes de la vue "Devis en attente" (0=web, 1=manuels, 2=brouillons).
+  // Repliées par défaut, et l'état choisi par l'utilisateur est mémorisé sur cet appareil
+  // (localStorage) pour ne pas avoir à tout replier à nouveau à chaque rechargement.
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ed_collapsedDevisSections");
+      if (saved) return new Set(JSON.parse(saved));
+    } catch (e) {}
+    return new Set([0, 1, 2]);
+  });
+  const toggleSection = (r) => setCollapsedSections(prev => {
+    const n = new Set(prev);
+    n.has(r) ? n.delete(r) : n.add(r);
+    try { localStorage.setItem("ed_collapsedDevisSections", JSON.stringify([...n])); } catch (e) {}
+    return n;
+  });
+
   const saveOrder = (order, isEdit) => setOrders(prev => {
     const exists = prev.find(o => o.id === order.id);
     if (isEdit && exists) {
@@ -5420,11 +5437,15 @@ function AppInner() {
                 const phaseColor = order.phase === "retour" ? "#c2410c" : order.phase === "termine" ? "#6b7280" : "#3b82f6";
                 const isExp = expandedOrders.has(order.id);
                 const orderShortage = !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(order.status) ? stockShortage(order, orders, stock) : [];
-                // Titre de section pour devisEnAttente (inséré avant la 1re carte de chaque groupe)
+                // Titre de section pour devisEnAttente (inséré avant la 1re carte de chaque groupe).
+                // La section est un accordéon : cliquer sur l'en-tête la replie/déplie, et
+                // masque/affiche toutes les cartes du groupe correspondant (rank).
                 let sectionHeader = null;
+                let sectionRank = null;
                 if (view === "devisEnAttente") {
                   const rank = (o) => o.createdBy === "web-client" ? 0 : o.status === "Brouillon" ? 2 : 1;
                   const r = rank(order);
+                  sectionRank = r;
                   const prevR = idx > 0 ? rank(filtered[idx - 1]) : -1;
                   if (r !== prevR) {
                     const SECTIONS = {
@@ -5434,13 +5455,23 @@ function AppInner() {
                     };
                     const s = SECTIONS[r];
                     const count = filtered.filter(o => rank(o) === r).length;
+                    const isCollapsed = collapsedSections.has(r);
                     sectionHeader = (
-                      <div style={{ marginTop: idx > 0 ? 12 : 0, marginBottom: 4 }}>
-                        <div style={{ fontSize: 12, fontWeight: 900, color: s.color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label} ({count})</div>
+                      <div style={{ marginTop: idx > 0 ? 12 : 0, marginBottom: 4, cursor: "pointer", userSelect: "none" }} onClick={() => toggleSection(r)}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 900, color: s.color, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          <span style={{ fontSize: 10, transform: isCollapsed ? "none" : "rotate(90deg)", transition: "transform 0.2s", display: "inline-block" }}>▶</span>
+                          <span>{s.label} ({count})</span>
+                        </div>
                         <div style={{ borderBottom: `2px solid ${s.border}`, marginTop: 4 }} />
                       </div>
                     );
                   }
+                }
+                if (view === "devisEnAttente" && sectionRank !== null && collapsedSections.has(sectionRank) && !sectionHeader) {
+                  return null;
+                }
+                if (view === "devisEnAttente" && sectionRank !== null && collapsedSections.has(sectionRank)) {
+                  return <React.Fragment key={order.id}>{sectionHeader}</React.Fragment>;
                 }
                 return (
                   <React.Fragment key={order.id}>

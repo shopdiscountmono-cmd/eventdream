@@ -42,20 +42,17 @@
     .etage-row{display:flex;align-items:center;gap:12px;background:#f8fafc;border-radius:12px;padding:14px;margin-bottom:16px}
     .etage-row span{font-size:14px;font-weight:600}
     .etage-row input{width:70px;margin:0;text-align:center;font-weight:800}
-    .item-row{display:flex;flex-direction:column;gap:8px;padding:13px;background:#f8fafc;border-radius:12px;margin-bottom:8px}
-    .item-main{display:flex;align-items:center;gap:10px}
-    .item-thumb{width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0}
-    .item-icon{font-size:24px;width:42px;text-align:center;flex-shrink:0;line-height:42px}
-    .item-name{font-weight:700;font-size:14px;overflow-wrap:anywhere}
-    .qty-ctrl{display:flex;align-items:center;gap:5px;flex-shrink:0}
-    .qty-btn{width:32px;height:32px;border-radius:10px;border:none;font-size:17px;font-weight:900;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+    .item-row{display:flex;align-items:center;gap:12px;padding:13px;background:#f8fafc;border-radius:12px;margin-bottom:8px}
+    .item-thumb{width:46px;height:46px;border-radius:10px;object-fit:cover;flex-shrink:0}
+    .item-icon{font-size:26px;width:46px;text-align:center;flex-shrink:0;line-height:46px}
+    .item-name{font-weight:700;font-size:14px}
+    .qty-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .qty-btn{width:34px;height:34px;border-radius:10px;border:none;font-size:18px;font-weight:900;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
     .qty-btn.plus{background:#dcfce7;color:var(--green)}
     .qty-btn.minus{background:#fee2e2;color:#ef4444}
-    .qty-input{width:52px;padding:6px 2px;border-radius:10px;border:1.5px solid var(--border);text-align:center;font-size:16px;font-weight:800;font-family:inherit;margin:0}
-    .opt-cb{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:600;background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px 12px;width:100%}
-    /* Le reset global "input{-webkit-appearance:none}" supprime aussi le dessin de l'encoche des
-       cases à cocher (case qui semble ne jamais se cocher) : on restaure leur apparence native. */
-    .opt-cb input{width:20px;height:20px;margin:0;cursor:pointer;flex-shrink:0;-webkit-appearance:checkbox;appearance:auto;accent-color:#10b981}
+    .qty-input{width:62px;padding:6px 4px;border-radius:10px;border:1.5px solid var(--border);text-align:center;font-size:16px;font-weight:800;font-family:inherit;margin:0}
+    .opt-cb{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-top:6px;font-weight:600}
+    .opt-cb input{width:16px;height:16px;margin:0;cursor:pointer}
     .cat-title{font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
     .recap-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
     .recap-row:last-of-type{border-bottom:none}
@@ -75,6 +72,23 @@
     .success h2{font-size:22px;font-weight:900;color:var(--green);margin-bottom:10px;justify-content:center}
     .success p{color:var(--muted);font-size:14px;line-height:1.6;max-width:340px;margin:0 auto}
   </style>
+  <!-- Meta Pixel Code -->
+  <script>
+  !function(f,b,e,v,n,t,s)
+  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+  n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];
+  s.parentNode.insertBefore(t,s)}(window, document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '1625864222383566');
+  fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=1625864222383566&ev=PageView&noscript=1"
+  /></noscript>
+  <!-- End Meta Pixel Code -->
 </head>
 <body>
 <div class="wrap">
@@ -98,7 +112,7 @@ let form={
   trajetAller:true,trajetRetour:true,
   date:"",returnDate:"",
   items:{},options:{},freeText:"",
-  deliveryKm:0,deliveryMin:0,addrStatus:"idle", // idle | checking | ok | error
+  deliveryKm:0,deliveryMin:0,
   acomptePct:30
 };
 
@@ -119,8 +133,7 @@ acompte:"Acompte à payer",p30:"30% — réservation",p100:"100% — paiement co
 acompte_note:"Vous recevrez les instructions de paiement par message après validation.",
 submit:"Envoyer ma demande",next:"Suivant",back:"Retour",
 ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande de devis. Notre équipe vous recontacte très rapidement pour la confirmer.",
-req:"Merci de remplir les champs obligatoires",free_text:"Demande spéciale (optionnel)",free_text_ph:"Articles non listés, couleurs, précisions...",
-ret_err:"La date de retour doit être postérieure à la date de livraison/retrait"},
+req:"Merci de remplir les champs obligatoires",free_text:"Demande spéciale (optionnel)",free_text_ph:"Articles non listés, couleurs, précisions..."},
 en:{sub:"Online Quote Request",s1:"Your details",s2:"Date & Delivery",s3:"Your equipment",s4:"Summary",
 name:"Full name",phone:"Phone",email:"Email (optional)",address:"Delivery address",
 mode_liv:"Delivery",mode_ret:"Warehouse pickup",
@@ -137,8 +150,7 @@ acompte:"Deposit to pay",p30:"30% — reservation",p100:"100% — full payment",
 acompte_note:"You will receive payment instructions by message after validation.",
 submit:"Send my request",next:"Next",back:"Back",
 ok_title:"Request sent!",ok_text:"We have received your quote request. Our team will contact you shortly to confirm it.",
-req:"Please fill in the required fields",free_text:"Special request (optional)",free_text_ph:"Unlisted items, colors, details...",
-ret_err:"Return date must be after the delivery/pickup date"}};
+req:"Please fill in the required fields",free_text:"Special request (optional)",free_text_ph:"Unlisted items, colors, details..."}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
@@ -228,44 +240,19 @@ function calcSubtotal(){
 function calcTotal(){return calcSubtotal()+calcDelivery()}
 
 let debounceTimer=null;
-// Jeton incrémenté à chaque nouvelle saisie : permet d'ignorer une réponse API qui reviendrait
-// après qu'une saisie plus récente ait déjà lancé sa propre vérification (sinon une réponse
-// "en retard" peut écraser un statut plus à jour et afficher un message erroné).
-let addrReqToken=0;
 window.onAddrInput=val=>{
   form.address=val;
   clearTimeout(debounceTimer);
-  const myToken=++addrReqToken;
-  if(val.length<8){
-    form.addrStatus="idle";form.deliveryKm=0;form.deliveryMin=0;
-    updateAddrStatusDom();
-    return;
-  }
-  form.addrStatus="checking";
-  updateAddrStatusDom();
   debounceTimer=setTimeout(async()=>{
+    if(val.length<8)return;
+    const el=document.getElementById("addr-status");
+    if(el)el.textContent="📍 "+t("calcul");
     const res=await computeDistance(settings.warehouseAddress||"",val);
-    if(myToken!==addrReqToken)return; // réponse obsolète : une saisie plus récente a pris le relais
-    if(res){form.deliveryKm=res.km;form.deliveryMin=res.min;form.addrStatus="ok";}
-    else{form.deliveryKm=0;form.deliveryMin=0;form.addrStatus="error";}
+    if(res){form.deliveryKm=res.km;form.deliveryMin=res.min;}
+    else{form.deliveryKm=0;form.deliveryMin=0;}
     render();
   },900);
 };
-
-// Statut sous le champ adresse (couleur + texte) selon form.addrStatus. Appelé aussi en dehors
-// de render() (frappe en cours) pour donner un retour immédiat sans reconstruire toute l'étape.
-function addrStatusLabel(){
-  if(form.addrStatus==="checking")return{text:"📍 "+t("calcul"),color:"#94a3b8"};
-  if(form.addrStatus==="ok")return{text:"✅ Adresse validée",color:"#10b981"};
-  if(form.addrStatus==="error")return{text:"⚠️ "+t("addr_err"),color:"#f59e0b"};
-  return{text:"",color:"#94a3b8"};
-}
-function updateAddrStatusDom(){
-  const el=document.getElementById("addr-status");
-  if(!el)return;
-  const{text,color}=addrStatusLabel();
-  el.textContent=text;el.style.color=color;
-}
 
 function render(){
   const steps=[t("s1"),t("s2"),t("s3"),t("s4")];
@@ -285,16 +272,17 @@ function render(){
 
   // ── ÉTAPE 2 ──
   else if(step===2){
-    const hasAddr=form.addrStatus==="ok";
-    // Les prix des niveaux ne sont PAS affichés ici : les surcoûts étage/installation dépendent
-    // des articles (pas encore choisis à cette étape) — un prix identique sur les 3 niveaux
-    // serait trompeur. Le prix final s'affiche au récapitulatif (étape 4).
+    const delPrice=calcDelivery();
+    const basePrice=calcBase();
+    const portePrice=basePrice+calcEtage();
+    const installPrice=basePrice+calcEtage()+calcInstall();
+    const hasAddr=form.deliveryKm>0;
     document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2>📅 ${t("s2")}</h2>
       <label>${t("date")} *</label>
       <input id="f-date" type="date" value="${form.date}" min="${TODAY}" onchange="onDateChange(this.value)"/>
       <label>${t("retDate")}</label>
-      <input id="f-retdate" type="date" value="${form.returnDate}" min="${nextDay(form.date)}" onchange="onRetDateChange(this.value)"/>
+      <input id="f-retdate" type="date" value="${form.returnDate}" min="${nextDay(form.date)}" onchange="form.returnDate=this.value"/>
 
       <label>Mode *</label>
       <div class="mode-grid">
@@ -305,7 +293,7 @@ function render(){
       ${form.mode==="livraison"?`
         <label>${t("address")} *</label>
         <input id="f-addr" value="${form.address}" placeholder="19 rue de la Paix, 94800 Villejuif" autocomplete="street-address" oninput="onAddrInput(this.value)" style="margin-bottom:4px"/>
-        <div id="addr-status" style="font-size:12px;font-weight:700;color:${addrStatusLabel().color};margin-bottom:16px">${addrStatusLabel().text}</div>
+        <div id="addr-status" style="font-size:12px;font-weight:700;color:${hasAddr?"#10b981":"#94a3b8"};margin-bottom:16px">${hasAddr?"✅ Adresse validée":form.address.length>=8?"⚠️ "+t("addr_err"):""}</div>
 
         <label>${t("trajet")}</label>
         <div class="trajet-row">
@@ -318,29 +306,29 @@ function render(){
           <button class="niveau-card${form.niveau==="pied"?" sel":""}" onclick="setNiveau('pied')">
             <div class="ic">🚚</div>
             <div class="info"><div class="ttl">${t("niv_pied")}</div><div class="sub">${t("niv_pied_sub")}</div></div>
-            
+            ${hasAddr?`<div class="prix">${basePrice.toFixed(2)} €</div>`:""}
           </button>
           <button class="niveau-card${form.niveau==="porte"?" sel":""}" onclick="setNiveau('porte')">
             <div class="ic">🚪</div>
             <div class="info"><div class="ttl">${t("niv_porte")}</div><div class="sub">${t("niv_porte_sub")}</div></div>
-            
+            ${hasAddr?`<div class="prix">${portePrice.toFixed(2)} €</div>`:""}
           </button>
           <button class="niveau-card${form.niveau==="installation"?" sel":""}" onclick="setNiveau('installation')">
             <div class="ic">🛠️</div>
             <div class="info"><div class="ttl">${t("niv_install")}</div><div class="sub">${t("niv_install_sub")}</div></div>
-            
+            ${hasAddr?`<div class="prix">${installPrice.toFixed(2)} €</div>`:""}
           </button>
         </div>
 
         ${form.niveau!=="pied"?`
         <div class="etage-row">
           <span>🪜 ${t("etage_q")}</span>
-          <input type="number" inputmode="numeric" min="0" value="${form.etage}" placeholder="0" onchange="onEtageChange(this.value)"/>
+          <input type="number" inputmode="numeric" min="0" value="${form.etage}" placeholder="0" onchange="form.etage=this.value;render()"/>
           <span style="font-size:11px;color:var(--muted)">${t("etage_hint")}</span>
         </div>`:""}
       `:""}
       <div id="err2" class="err" style="display:none"></div>
-      <div class="nav-btns"><button class="back-btn" onclick="goBackTo(1)">← ${t("back")}</button><button class="next-btn" onclick="goStep2()">${t("next")} →</button></div>
+      <div class="nav-btns"><button class="back-btn" onclick="step=1;render()">← ${t("back")}</button><button class="next-btn" onclick="goStep2()">${t("next")} →</button></div>
     </div>`;
   }
 
@@ -355,21 +343,21 @@ function render(){
         const thumb=item.imageUrl?`<img src="${item.imageUrl}" class="item-thumb"/>`:`<div class="item-icon">${item.icon||"📦"}</div>`;
         const washPrice=parseFloat(item.cleaningPrice)||0;
         html+=`<div class="item-row">
-          <div class="item-main">
-            ${thumb}
-            <div style="flex:1;min-width:0"><div class="item-name">${item.name}</div></div>
-            <div class="qty-ctrl">
-              <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
-              <input class="qty-input" type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)"/>
-              <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
-            </div>
+          ${thumb}
+          <div style="flex:1;min-width:0">
+            <div class="item-name">${item.name}</div>
+            ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/>🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
           </div>
-          ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/>🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
+          <div class="qty-ctrl">
+            <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
+            <input class="qty-input" type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)"/>
+            <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
+          </div>
         </div>`;
       });
     });
     html+=`<div style="margin-top:16px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" style="resize:vertical">${form.freeText||""}</textarea></div>`;
-    html+=`<div class="nav-btns"><button class="back-btn" onclick="goBackTo(2)">← ${t("back")}</button><button class="next-btn" onclick="goStep3()">${t("next")} →</button></div></div>`;
+    html+=`<div class="nav-btns"><button class="back-btn" onclick="saveFree();step=2;render()">← ${t("back")}</button><button class="next-btn" onclick="goStep3()">${t("next")} →</button></div></div>`;
     document.getElementById("app").innerHTML=html;
   }
 
@@ -405,7 +393,7 @@ function render(){
     </div>
     <div id="err4" class="err" style="display:none"></div>
     <button class="submit-btn" id="submit-btn" onclick="submitForm()">✅ ${t("submit")}</button>
-    <div class="nav-btns"><button class="back-btn" style="width:100%" onclick="goBackTo(3)">← ${t("back")}</button></div>`;
+    <div class="nav-btns"><button class="back-btn" style="width:100%" onclick="step=3;render()">← ${t("back")}</button></div>`;
   }
 }
 
@@ -438,23 +426,6 @@ window.toggleOpt=(k,v)=>{form.options[k]=v;render()};
 window.setPct=p=>{form.acomptePct=p;render()};
 window.saveFree=()=>{form.freeText=document.getElementById("f-free")?.value||form.freeText};
 
-// ⚠️ Les handlers inline (onclick="...") s'exécutent dans le scope GLOBAL : ils ne voient pas
-// les variables du module (step, form, render). Tout handler inline doit donc passer par une
-// fonction exposée sur window — sinon il échoue silencieusement (cause du bug "bouton Retour
-// inopérant" et "étage jamais pris en compte").
-window.goBackTo=n=>{
-  // Sauvegarde les champs de l'étape courante avant de revenir en arrière
-  if(step===2){
-    form.date=document.getElementById("f-date")?.value||form.date;
-    form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
-    if(form.mode==="livraison")form.address=document.getElementById("f-addr")?.value||form.address;
-  }
-  if(step===3)saveFree();
-  step=n;render();
-};
-window.onRetDateChange=v=>{form.returnDate=v};
-window.onEtageChange=v=>{form.etage=v;render()};
-
 window.goStep1=()=>{
   form.name=document.getElementById("f-name")?.value||"";
   form.phone=document.getElementById("f-phone")?.value||"";
@@ -470,16 +441,6 @@ window.goStep2=()=>{
   const err=document.getElementById("err2");
   if(!form.date){err.textContent=t("req");err.style.display="block";return;}
   if(form.mode==="livraison"&&!form.address.trim()){err.textContent=t("req");err.style.display="block";return;}
-  // Garde-fou JS explicite : certains navigateurs (iOS Safari notamment) n'empêchent pas
-  // toujours la sélection d'une date antérieure malgré l'attribut "min" du champ HTML.
-  if(form.returnDate&&form.returnDate<=form.date){
-    // Corrige automatiquement au lendemain de la date de livraison pour débloquer le client
-    form.returnDate=nextDay(form.date);
-    render();
-    const err2=document.getElementById("err2");
-    if(err2){err2.textContent=t("ret_err");err2.style.display="block";}
-    return;
-  }
   step=3;render();
 };
 window.goStep3=()=>{
@@ -514,6 +475,8 @@ window.submitForm=async()=>{
     });
     document.getElementById("app").innerHTML=`<div class="card success"><div class="ic">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;
     window.scrollTo(0,0);
+    // Événement Facebook : demande de devis envoyée avec succès (utilisé pour le suivi des campagnes pub)
+    if(typeof fbq==="function"){fbq('track','Lead');}
   }catch(e){
     btn.disabled=false;btn.textContent="✅ "+t("submit");
     const err=document.getElementById("err4");

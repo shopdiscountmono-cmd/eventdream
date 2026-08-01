@@ -36,6 +36,7 @@
     .niveau-card .ttl{font-weight:800;font-size:14px}
     .niveau-card .sub{font-size:12px;color:var(--muted);margin-top:2px}
     .niveau-card .prix{font-weight:900;font-size:15px;color:var(--green);flex-shrink:0;white-space:nowrap}
+    .addr-grid{display:grid;grid-template-columns:110px 1fr;gap:8px}
     .trajet-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
     .trajet-btn{padding:12px;border-radius:12px;border:2px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center}
     .trajet-btn.sel{border-color:var(--green);background:#f0fdf4;color:#065f46}
@@ -112,7 +113,11 @@ const MAPS_KEY="AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU";
 
 let lang="fr",step=1,stockItems=[],settings={};
 let form={
-  name:"",phone:"",email:"",address:"",
+  name:"",phone:"",email:"",
+  // Adresse découpée en 3 champs : sans code postal ni ville, Google résout une rue homonyme
+  // dans une autre ville (ex: "19 rue Léon Blum" → plusieurs centaines de km) et les frais
+  // calculés deviennent aberrants. On n'interroge l'API qu'une fois les 3 champs remplis.
+  rue:"",cp:"",ville:"",address:"",
   mode:"retrait",              // "retrait" | "livraison"
   niveau:"pied",               // "pied" | "porte" | "installation"
   etage:"",                    // saisi par le client (min 1 compté en interne)
@@ -141,7 +146,12 @@ acompte_note:"Vous recevrez les instructions de paiement par message après vali
 submit:"Envoyer ma demande",next:"Suivant",back:"Retour",
 ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande de devis. Notre équipe vous recontacte très rapidement pour la confirmer.",
 req:"Merci de remplir les champs obligatoires",free_text:"Demande spéciale (optionnel)",free_text_ph:"Articles non listés, couleurs, précisions...",
-ret_err:"La date de retour doit être postérieure à la date de livraison/retrait"},
+ret_err:"La date de retour doit être postérieure à la date de livraison/retrait",
+rue:"Numéro et rue",cp:"Code postal",ville:"Ville",
+addr_incomplete:"Complétez le code postal et la ville pour calculer les frais",
+cp_err:"Code postal invalide (5 chiffres attendus)",
+hors_zone:"Adresse hors de notre zone de livraison — nous vous recontactons pour un devis personnalisé.",
+frais_apres:"Frais de livraison confirmés par nos soins"},
 en:{sub:"Online Quote Request",s1:"Your details",s2:"Date & Delivery",s3:"Your equipment",s4:"Summary",
 name:"Full name",phone:"Phone",email:"Email (optional)",address:"Delivery address",
 mode_liv:"Delivery",mode_ret:"Warehouse pickup",
@@ -159,7 +169,12 @@ acompte_note:"You will receive payment instructions by message after validation.
 submit:"Send my request",next:"Next",back:"Back",
 ok_title:"Request sent!",ok_text:"We have received your quote request. Our team will contact you shortly to confirm it.",
 req:"Please fill in the required fields",free_text:"Special request (optional)",free_text_ph:"Unlisted items, colors, details...",
-ret_err:"Return date must be after the delivery/pickup date"}};
+ret_err:"Return date must be after the delivery/pickup date",
+rue:"Street number and name",cp:"Postal code",ville:"City",
+addr_incomplete:"Enter postal code and city to calculate delivery fees",
+cp_err:"Invalid postal code (5 digits expected)",
+hors_zone:"Address outside our delivery area — we will contact you with a custom quote.",
+frais_apres:"Delivery fees confirmed by our team"}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
@@ -248,37 +263,58 @@ function calcSubtotal(){
 }
 function calcTotal(){return calcSubtotal()+calcDelivery()}
 
+// Distance maximale considérée comme une livraison normale. Au-delà, on n'annonce aucun prix
+// (filet de sécurité contre une faute de frappe sur le code postal ou un client hors zone).
+const MAX_KM=100;
+
+// Adresse complète reconstituée à partir des 3 champs — utilisée pour l'API et pour Firestore.
+function fullAddress(){
+  const rue=(form.rue||"").trim(),cp=(form.cp||"").trim(),ville=(form.ville||"").trim();
+  if(!rue||!cp||!ville)return"";
+  return`${rue}, ${cp} ${ville}`;
+}
+const cpValide=()=>/^\d{5}$/.test((form.cp||"").trim());
+const adresseComplete=()=>!!(form.rue||"").trim()&&cpValide()&&!!(form.ville||"").trim();
+
 let debounceTimer=null;
 // Jeton incrémenté à chaque nouvelle saisie : permet d'ignorer une réponse API qui reviendrait
 // après qu'une saisie plus récente ait déjà lancé sa propre vérification (sinon une réponse
 // "en retard" peut écraser un statut plus à jour et afficher un message erroné).
 let addrReqToken=0;
-window.onAddrInput=val=>{
-  form.address=val;
+
+// Appelé à chaque frappe sur l'un des 3 champs. Le calcul de distance n'est JAMAIS lancé tant
+// que rue + code postal (5 chiffres) + ville ne sont pas tous renseignés : c'est ce qui évite
+// que Google résolve une rue homonyme dans une autre ville et renvoie des frais aberrants.
+window.onAddrField=(champ,val)=>{
+  form[champ]=val;
+  form.address=fullAddress();
   clearTimeout(debounceTimer);
   const myToken=++addrReqToken;
-  if(val.length<8){
-    form.addrStatus="idle";form.deliveryKm=0;form.deliveryMin=0;
+  if(!adresseComplete()){
+    form.addrStatus="incomplete";form.deliveryKm=0;form.deliveryMin=0;
     updateAddrStatusDom();
     return;
   }
   form.addrStatus="checking";
   updateAddrStatusDom();
   debounceTimer=setTimeout(async()=>{
-    const res=await computeDistance(settings.warehouseAddress||"",val);
+    const res=await computeDistance(settings.warehouseAddress||"",form.address);
     if(myToken!==addrReqToken)return; // réponse obsolète : une saisie plus récente a pris le relais
-    if(res){form.deliveryKm=res.km;form.deliveryMin=res.min;form.addrStatus="ok";}
+    if(res&&res.km>MAX_KM){form.deliveryKm=0;form.deliveryMin=0;form.addrStatus="horszone";}
+    else if(res){form.deliveryKm=res.km;form.deliveryMin=res.min;form.addrStatus="ok";}
     else{form.deliveryKm=0;form.deliveryMin=0;form.addrStatus="error";}
     render();
   },900);
 };
 
-// Statut sous le champ adresse (couleur + texte) selon form.addrStatus. Appelé aussi en dehors
+// Statut sous les champs adresse (couleur + texte) selon form.addrStatus. Appelé aussi en dehors
 // de render() (frappe en cours) pour donner un retour immédiat sans reconstruire toute l'étape.
 function addrStatusLabel(){
   if(form.addrStatus==="checking")return{text:"📍 "+t("calcul"),color:"#94a3b8"};
-  if(form.addrStatus==="ok")return{text:"✅ Adresse validée",color:"#10b981"};
+  if(form.addrStatus==="ok")return{text:`✅ ${form.ville.trim()} — ${t("recap")==="Récapitulatif"?"adresse validée":"address validated"}`,color:"#10b981"};
+  if(form.addrStatus==="horszone")return{text:"📍 "+t("hors_zone"),color:"#f59e0b"};
   if(form.addrStatus==="error")return{text:"⚠️ "+t("addr_err"),color:"#f59e0b"};
+  if(form.addrStatus==="incomplete")return{text:"✍️ "+t("addr_incomplete"),color:"#94a3b8"};
   return{text:"",color:"#94a3b8"};
 }
 function updateAddrStatusDom(){
@@ -325,7 +361,11 @@ function render(){
 
       ${form.mode==="livraison"?`
         <label>${t("address")} *</label>
-        <input id="f-addr" value="${form.address}" placeholder="19 rue de la Paix, 94800 Villejuif" autocomplete="street-address" oninput="onAddrInput(this.value)" style="margin-bottom:4px"/>
+        <input id="f-rue" value="${form.rue}" placeholder="${t("rue")}" autocomplete="street-address" oninput="onAddrField('rue',this.value)" style="margin-bottom:8px"/>
+        <div class="addr-grid">
+          <input id="f-cp" value="${form.cp}" placeholder="${t("cp")}" inputmode="numeric" maxlength="5" autocomplete="postal-code" oninput="onAddrField('cp',this.value)" style="margin-bottom:4px"/>
+          <input id="f-ville" value="${form.ville}" placeholder="${t("ville")}" autocomplete="address-level2" oninput="onAddrField('ville',this.value)" style="margin-bottom:4px"/>
+        </div>
         <div id="addr-status" style="font-size:12px;font-weight:700;color:${addrStatusLabel().color};margin-bottom:16px">${addrStatusLabel().text}</div>
 
         <label>${t("trajet")}</label>
@@ -405,7 +445,7 @@ function render(){
       <div style="margin-bottom:8px;font-size:15px"><strong>${form.name}</strong></div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:2px">${form.phone}${form.email?` · ${form.email}`:""}</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:2px">📅 ${fmtD(form.date)}${form.returnDate?" → "+fmtD(form.returnDate):""}</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:14px">${form.mode==="livraison"?`📍 ${form.address}`:"🏠 "+t("mode_ret")}</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:14px">${form.mode==="livraison"?`📍 ${fullAddress()||form.address}`:"🏠 "+t("mode_ret")}</div>
       ${selItems.map(([id,qty])=>{
         const it=stockItems.find(s=>s.id===id);
         if(!it)return"";
@@ -413,7 +453,7 @@ function render(){
         const tot=((parseFloat(it.price)||0)*qty)+wash;
         return`<div class="recap-row"><span>${it.icon||"📦"} ${it.name} ×${qty}${wash>0?" <span style='font-size:11px;color:#0891b2'>+ lavage</span>":""}</span><span style="font-weight:700">${tot.toFixed(2)} €</span></div>`;
       }).join("")}
-      ${del>0?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}
+      ${del>0?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:(form.mode==="livraison"&&form.addrStatus!=="ok"?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700;font-size:12px;color:#f59e0b">${t("frais_apres")}</span></div>`:"")}
       <div class="recap-total"><span>${t("total")}</span><span>${total.toFixed(2)} €</span></div>
       ${form.freeText?`<div style="background:#fffbeb;border-radius:10px;padding:12px;font-size:13px;margin-top:10px">📝 ${form.freeText}</div>`:""}
     </div>
@@ -463,12 +503,19 @@ window.saveFree=()=>{form.freeText=document.getElementById("f-free")?.value||for
 // les variables du module (step, form, render). Tout handler inline doit donc passer par une
 // fonction exposée sur window — sinon il échoue silencieusement (cause du bug "bouton Retour
 // inopérant" et "étage jamais pris en compte").
+// Relit les 3 champs adresse depuis le DOM et reconstitue l'adresse complète.
+function readAddrFields(){
+  form.rue=document.getElementById("f-rue")?.value??form.rue;
+  form.cp=document.getElementById("f-cp")?.value??form.cp;
+  form.ville=document.getElementById("f-ville")?.value??form.ville;
+  form.address=fullAddress();
+}
 window.goBackTo=n=>{
   // Sauvegarde les champs de l'étape courante avant de revenir en arrière
   if(step===2){
     form.date=document.getElementById("f-date")?.value||form.date;
     form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
-    if(form.mode==="livraison")form.address=document.getElementById("f-addr")?.value||form.address;
+    if(form.mode==="livraison")readAddrFields();
   }
   if(step===3)saveFree();
   step=n;render();
@@ -487,10 +534,15 @@ window.goStep1=()=>{
 window.goStep2=()=>{
   form.date=document.getElementById("f-date")?.value||form.date;
   form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
-  if(form.mode==="livraison")form.address=document.getElementById("f-addr")?.value||form.address;
+  if(form.mode==="livraison")readAddrFields();
   const err=document.getElementById("err2");
   if(!form.date){err.textContent=t("req");err.style.display="block";return;}
-  if(form.mode==="livraison"&&!form.address.trim()){err.textContent=t("req");err.style.display="block";return;}
+  if(form.mode==="livraison"){
+    // Les 3 champs sont obligatoires : sans code postal ni ville, la distance (et donc les frais)
+    // ne peut pas être calculée de façon fiable.
+    if(!form.rue.trim()||!form.ville.trim()){err.textContent=t("req");err.style.display="block";return;}
+    if(!cpValide()){err.textContent=t("cp_err");err.style.display="block";return;}
+  }
   // Garde-fou JS explicite : certains navigateurs (iOS Safari notamment) n'empêchent pas
   // toujours la sélection d'une date antérieure malgré l'attribut "min" du champ HTML.
   if(form.returnDate&&form.returnDate<=form.date){
@@ -523,7 +575,7 @@ window.submitForm=async()=>{
     await setDoc(doc(db,"orders",id),{
       id,status:"Non confirmé",phase:"livraison",
       clientName:form.name,clientPhone:form.phone,clientEmail:form.email,
-      address:form.address,deliveryMode:form.mode,
+      address:fullAddress()||form.address,addressRue:form.rue,addressCp:form.cp,addressVille:form.ville,deliveryMode:form.mode,
       deliveryNiveau:form.niveau,etageClient:form.etage,etageEffectif:form.mode==="livraison"&&form.niveau!=="pied"?effEtages():0,
       trajetAller:form.trajetAller,trajetRetour:form.trajetRetour,
       deliveryDate:form.date,returnDate:form.returnDate,

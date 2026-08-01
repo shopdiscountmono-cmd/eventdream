@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.40.0 — Aperçu devis interne (bouton Fermer), numéro WhatsApp international + ouverture directe (fix page blanche), bandeau paiement déclaré détaillé, devis.html : prix masqués étape 2 + checkbox lavage visible + fix chevauchement (01/08/2026)";
+const APP_VERSION = "v3.41.0 — Adresse structurée rue/CP/ville partout (devis, fiche client, onglet livraison), pas de calcul sans code postal, plafond 100 km, MAJ auto de la fiche client (01/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -928,6 +928,78 @@ function Btn({ children, onClick, variant = "primary", size = "md", style, disab
   const vr = { primary: { background: "#1a1a2e", color: "#fff" }, secondary: { background: "#f4f4f8", color: "#333" }, danger: { background: "#fee2e2", color: "#dc2626" }, success: { background: "#d1fae5", color: "#065f46" }, ghost: { background: "transparent", color: "#666" }, warning: { background: "#fef9c3", color: "#92400e" } }[variant];
   return <button type="button" disabled={disabled} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer", fontWeight: 700, fontFamily: "inherit", transition: "all 0.15s", opacity: disabled ? 0.5 : 1, ...sz, ...vr, ...style }}>{children}</button>;
 }
+// ───────────────────────────────────────────────────────────
+// Adresse structurée (rue / code postal / ville)
+// Sans code postal ni ville, Google résout une rue homonyme dans une autre ville et la distance
+// calculée devient aberrante (un devis a été observé à 1685 € au lieu de 114 €). On saisit donc
+// l'adresse en 3 champs, et aucun calcul n'est lancé tant qu'ils ne sont pas tous remplis.
+// ───────────────────────────────────────────────────────────
+
+// Découpe une adresse enregistrée en un seul bloc ("19 rue Léon Blum, 94270 Le Kremlin-Bicêtre")
+// en {rue, cp, ville}, en s'appuyant sur le code postal à 5 chiffres comme point de repère.
+// Si aucun code postal n'est trouvé, tout est mis dans "rue" (l'équipe complétera).
+function splitAddress(full) {
+  const s = String(full || "").trim();
+  if (!s) return { rue: "", cp: "", ville: "" };
+  const m = s.match(/(\d{5})/);
+  if (!m) return { rue: s, cp: "", ville: "" };
+  const cp = m[1];
+  const idx = s.indexOf(cp);
+  const rue = s.slice(0, idx).replace(/[,\s]+$/, "").trim();
+  const ville = s.slice(idx + 5).replace(/^[,\s]+/, "").trim();
+  return { rue, cp, ville };
+}
+
+// Recompose l'adresse complète à partir des 3 champs. Retourne "" si l'un manque : c'est ce
+// vide qui empêche tout calcul de distance en amont.
+function joinAddress({ rue, cp, ville }) {
+  const r = (rue || "").trim(), c = (cp || "").trim(), v = (ville || "").trim();
+  if (!r || !c || !v) return "";
+  return `${r}, ${c} ${v}`;
+}
+const isCpValide = (cp) => /^\d{5}$/.test(String(cp || "").trim());
+// Distance au-delà de laquelle une livraison est considérée hors zone (alerte de vérification).
+const MAX_DELIVERY_KM = 100;
+
+// Trio de champs adresse. `value` est l'adresse complète en une chaîne ; `onChange` la renvoie
+// recomposée (ou "" tant qu'elle est incomplète, pour bloquer le calcul de distance).
+function AddressFields({ label, value, onChange, compact }) {
+  // Tampon local : permet de saisir les champs un par un sans que la valeur parente (vide tant
+  // que l'adresse est incomplète) ne réinitialise ce qui vient d'être tapé.
+  const [parts, setParts] = useState(() => splitAddress(value));
+  const lastEmitted = useRef(joinAddress(splitAddress(value)));
+  // Resynchronise si l'adresse change depuis l'extérieur (choix d'un client, autre onglet...)
+  useEffect(() => {
+    if (value !== lastEmitted.current) {
+      setParts(splitAddress(value));
+      lastEmitted.current = value;
+    }
+  }, [value]);
+  const upd = (k, v) => {
+    const next = { ...parts, [k]: v };
+    setParts(next);
+    const joined = joinAddress(next);
+    lastEmitted.current = joined;
+    onChange(joined, next);
+  };
+  const incomplet = (parts.rue || parts.cp || parts.ville) && !joinAddress(parts);
+  return (
+    <div>
+      {label && <div style={{ fontSize: 12, fontWeight: 700, color: "#444", marginBottom: 6 }}>{label}</div>}
+      <Inp value={parts.rue} onChange={v => upd("rue", v)} placeholder="Numéro et rue" />
+      <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 8, marginTop: compact ? 6 : 8 }}>
+        <Inp value={parts.cp} onChange={v => upd("cp", v)} placeholder="Code postal" />
+        <Inp value={parts.ville} onChange={v => upd("ville", v)} placeholder="Ville" />
+      </div>
+      {incomplet && (
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginTop: 6 }}>
+          ⚠️ {!isCpValide(parts.cp) && parts.cp ? "Code postal invalide (5 chiffres)" : "Complétez rue, code postal et ville — sans cela la distance ne peut pas être calculée"}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Inp({ label, value, onChange, type = "text", placeholder, required, min, step, suffix, disabled }) {
   // Pour les nombres : on garde un tampon texte local pendant la saisie pour
   // éviter le "0" collé devant (ex: taper 2 quand la valeur est 0 → "20").
@@ -1334,8 +1406,15 @@ function ClientLibrary({ clients, setClients, onSelect, onClose, embedded, setti
             <div style={{ fontSize: 12, fontWeight: 700, color: "#444", marginBottom: 6 }}>Adresse(s)</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {form.addresses.map((a, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <div style={{ flex: 1 }}><Inp placeholder={i === 0 ? "Adresse principale" : "Adresse de livraison supplémentaire"} value={a} onChange={v => setAddress(i, v)} /></div>
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: 10, background: "#fafafa", borderRadius: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#999", marginBottom: 6 }}>{i === 0 ? "Adresse principale" : "Adresse de livraison supplémentaire"}</div>
+                    <AddressFields
+                      value={a}
+                      onChange={(joined, parts) => setAddress(i, joined || [parts.rue, [parts.cp, parts.ville].filter(Boolean).join(" ")].filter(Boolean).join(", "))}
+                      compact
+                    />
+                  </div>
                   {form.addresses.length > 1 && <Btn variant="danger" size="sm" onClick={() => removeAddress(i)}><span style={{ width: 13, height: 13 }}>{I.trash}</span></Btn>}
                 </div>
               ))}
@@ -1463,7 +1542,6 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
   const [catTab, setCatTab] = useState("articles");
   const [selectedCat, setSelectedCat] = useState("Toutes");
   const [showClientLib, setShowClientLib] = useState(false);
-  const [showAddressField, setShowAddressField] = useState(!!(initial && initial.address));
   const [cautionForced, setCautionForced] = useState(!!(initial && (initial.cautionMoyen || initial.cautionManual)));
   const [computingDist, setComputingDist] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
@@ -1549,11 +1627,15 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
   const autoDistance = async () => {
     if (!settings.googleMapsKey) { alert("Configurez une clé Google Maps dans les Réglages pour le calcul automatique."); return; }
     if (!form.address) { alert("Saisissez l'adresse du client d'abord."); return; }
+    // Sans code postal, Google peut résoudre une rue homonyme à des centaines de km : on refuse
+    // de calculer plutôt que d'annoncer un tarif faux.
+    if (!isCpValide(splitAddress(form.address).cp)) { alert("Complétez le code postal et la ville : sans eux, la distance calculée peut être totalement fausse."); return; }
     setComputingDist(true);
     const res = await computeDistance(settings.warehouseAddress, form.address, settings.googleMapsKey);
     setComputingDist(false);
-    if (res) { set("deliveryKm", res.km); set("deliveryMin", res.min); }
-    else alert("Calcul impossible. Vérifiez l'adresse et la clé API.");
+    if (!res) { alert("Calcul impossible. Vérifiez l'adresse et la clé API."); return; }
+    if (res.km > MAX_DELIVERY_KM) { alert(`Distance calculée : ${res.km} km — au-delà de ${MAX_DELIVERY_KM} km. Vérifiez l'adresse (code postal, ville) avant de valider ce tarif.`); }
+    set("deliveryKm", res.km); set("deliveryMin", res.min);
   };
 
   // ─── CALCUL AUTOMATIQUE DE LA DISTANCE ───────────────────────────────────
@@ -1565,6 +1647,9 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
     if (!settings.googleMapsKey || !settings.warehouseAddress) return;
     const addr = (form.address || "").trim();
     if (addr.length < 8) return; // adresse trop courte
+    // Garde-fou : pas de calcul tant que le code postal n'est pas renseigné (sinon Google devine
+    // la ville et peut renvoyer une distance aberrante, observée à plusieurs centaines de km).
+    if (!isCpValide(splitAddress(addr).cp)) return;
     if (addr === lastGeocodedRef.current) return; // déjà calculé pour cette adresse
     const t = setTimeout(async () => {
       lastGeocodedRef.current = addr;
@@ -1750,25 +1835,27 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
               <SuggestDropdown field="email" query={form.clientEmail} />
             </div>
           </div>
-          {!showAddressField ? (
-            <button onClick={() => setShowAddressField(true)} style={{ alignSelf: "flex-start", background: "none", border: "1.5px dashed #3b82f6", color: "#3b82f6", borderRadius: 8, padding: "8px 14px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>
-              + Ajouter une adresse de livraison
-            </button>
-          ) : (
-            <div>
-              <Inp label="📍 Adresse de livraison (peut être différente de celle du client)" value={form.address} onChange={v => set("address", v)} placeholder="12 rue de la Paix, Paris (lieu de l'événement par exemple)" />
-              {form.clientAddresses && form.clientAddresses.length > 1 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                  <span style={{ fontSize: 11, color: "#6b7280", alignSelf: "center" }}>Adresses du client :</span>
-                  {form.clientAddresses.map((a, i) => (
-                    <button key={i} onClick={() => set("address", a)} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 8, border: form.address === a ? "1.5px solid #1a1a2e" : "1px solid #e5e7eb", background: form.address === a ? "#1a1a2e" : "#fff", color: form.address === a ? "#fff" : "#374151", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      📍 {a}{i === 0 ? " (principale)" : ""}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <div>
+            <AddressFields
+              label="📍 Adresse de livraison (peut être différente de celle du client)"
+              value={form.address}
+              onChange={(joined, parts) => {
+                // On stocke l'adresse complète quand elle l'est, sinon la saisie partielle telle
+                // quelle : le devis reste lisible même si l'équipe n'a pas encore tout renseigné.
+                set("address", joined || [parts.rue, [parts.cp, parts.ville].filter(Boolean).join(" ")].filter(Boolean).join(", "));
+              }}
+            />
+            {form.clientAddresses && form.clientAddresses.length > 1 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                <span style={{ fontSize: 11, color: "#6b7280", alignSelf: "center" }}>Adresses du client :</span>
+                {form.clientAddresses.map((a, i) => (
+                  <button key={i} onClick={() => set("address", a)} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 8, border: form.address === a ? "1.5px solid #1a1a2e" : "1px solid #e5e7eb", background: form.address === a ? "#1a1a2e" : "#fff", color: form.address === a ? "#fff" : "#374151", cursor: "pointer", fontFamily: "inherit", fontWeight: 700, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    📍 {a}{i === 0 ? " (principale)" : ""}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* Numéros de téléphone multiples */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#444", marginBottom: 6 }}>Téléphone(s)</div>
@@ -1925,6 +2012,16 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
 
           {form.deliveryMode === "livraison" && (
             <div style={{ background: "#f8f9fa", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+              {/* Adresse modifiable ici même : évite de revenir à l'onglet Client quand elle n'a
+                  pas été renseignée. Synchronisée avec l'étape 1 (même champ form.address). */}
+              <AddressFields
+                label="📍 Adresse de livraison"
+                value={form.address}
+                onChange={(joined, parts) => {
+                  set("address", joined || [parts.rue, [parts.cp, parts.ville].filter(Boolean).join(" ")].filter(Boolean).join(", "));
+                }}
+                compact
+              />
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <Inp label="Distance (km)" type="number" value={form.deliveryKm} onChange={v => set("deliveryKm", v)} min="0" step="0.1" suffix="km" />
                 <Inp label="Temps (min)" type="number" value={form.deliveryMin} onChange={v => set("deliveryMin", v)} min="0" suffix="min" />
@@ -5754,10 +5851,22 @@ function AppInner() {
             // Si un brouillon avec cet ID existe déjà (créé par l'autosave), on le remplace au lieu d'en créer un nouveau.
             const brouillonExiste = orders.find(o => o.id === order.id);
             saveOrder(order, !!editOrder || !!brouillonExiste);
-            if (!editOrder) setClients(prev => {
-              if (prev.find(c => c.name === order.clientName && c.phone === order.clientPhone)) return prev;
+            // Répercute l'adresse saisie sur le devis dans la fiche client : si le client existe
+            // déjà, l'adresse est ajoutée à ses adresses connues (sans doublon) pour être proposée
+            // automatiquement la prochaine fois. Sinon, la fiche client est créée.
+            setClients(prev => {
+              const addr = (order.address || "").trim();
+              const existant = prev.find(c => c.name === order.clientName && c.phone === order.clientPhone);
+              if (existant) {
+                if (!addr) return prev;
+                const dejaConnues = (existant.addresses && existant.addresses.length ? existant.addresses : (existant.address ? [existant.address] : [])).filter(Boolean);
+                if (dejaConnues.some(a => a.trim().toLowerCase() === addr.toLowerCase())) return prev;
+                const addresses = [...dejaConnues, addr];
+                return prev.map(c => c.id === existant.id ? { ...c, addresses, address: c.address || addr } : c);
+              }
+              if (editOrder) return prev; // modification d'un devis existant : pas de création de fiche
               const phones = (order.clientPhones && order.clientPhones.length ? order.clientPhones : (order.clientPhone ? [order.clientPhone] : []));
-              return [...prev, { id: "cli-" + Date.now(), name: order.clientName, phone: order.clientPhone, phones, email: order.clientEmail, address: order.address, notes: "" }];
+              return [...prev, { id: "cli-" + Date.now(), name: order.clientName, phone: order.clientPhone, phones, email: order.clientEmail, address: addr, addresses: addr ? [addr] : [], notes: "" }];
             });
           }}
           onAutosave={(draft) => { setOrders(prev => { const ex = prev.find(o => o.id === draft.id); return ex ? prev.map(o => o.id === draft.id ? draft : o) : [draft, ...prev]; }); }}

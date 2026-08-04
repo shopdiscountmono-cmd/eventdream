@@ -21,6 +21,16 @@ export const auth = getAuth(app);
 // Région où sont déployées les Cloud Functions (doit correspondre à functions/index.js)
 const functionsInstance = getFunctions(app, "europe-west9");
 
+// Attribue le prochain numéro de devis (DEV-2026-001) ou de facture (FAC-2026-001).
+// Le compteur vit côté serveur dans une transaction Firestore : c'est la seule façon de garantir
+// qu'aucun doublon ni trou n'apparaisse si deux personnes valident au même instant — exigence
+// réglementaire pour la séquence des factures.
+export async function getNextNumber(type) {
+  const fn = httpsCallable(functionsInstance, "getNextNumber");
+  const res = await fn({ type });
+  return res.data; // { number, sequence, year }
+}
+
 // Envoie une campagne email (objet + contenu HTML + liste des ids clients destinataires).
 // La clé API Brevo reste côté serveur (secret Cloud Functions), jamais exposée au navigateur.
 export async function sendCampaignEmail({ subject, htmlBody, recipientIds }) {

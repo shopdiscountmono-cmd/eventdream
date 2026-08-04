@@ -715,6 +715,44 @@ exports.restoreBackup = onCall({ region: REGION, timeoutSeconds: 120 }, async (r
 });
 
 // ───────────────────────────────────────────────────────────
+// 10) Attribution atomique des numéros de devis et de factures
+//
+// Format : DEV-2026-001 (devis) · FAC-2026-001 (factures), compteur remis à 001 chaque année.
+//
+// L'atomicité est ESSENTIELLE : sans elle, deux personnes validant un devis à la même seconde
+// obtiendraient le même numéro. runTransaction() garantit que si deux appels se croisent, le
+// second détecte le conflit, rejoue automatiquement, et obtient le numéro suivant.
+//
+// Les numéros ne sont attribués qu'au moment utile (validation d'un devis, génération d'une
+// facture) et jamais sur un brouillon : c'est ce qui garantit une séquence de FACTURES continue
+// et sans trou, comme l'exige la réglementation française.
+// ───────────────────────────────────────────────────────────
+exports.getNextNumber = onCall({ region: REGION }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Connexion requise.");
+  const { type } = request.data || {};
+  if (!["devis", "facture"].includes(type)) {
+    throw new HttpsError("invalid-argument", "Type attendu : 'devis' ou 'facture'.");
+  }
+
+  const year = new Date().getFullYear();
+  const field = `${type}${year}`;              // ex: "devis2026"
+  const prefix = type === "devis" ? "DEV" : "FAC";
+  const ref = db.collection("app").doc("counters");
+
+  const numero = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? (snap.data().value || {}) : {};
+    const next = (typeof data[field] === "number" ? data[field] : 0) + 1;
+    tx.set(ref, { value: { ...data, [field]: next } }, { merge: true });
+    return next;
+  });
+
+  const formatted = `${prefix}-${year}-${String(numero).padStart(3, "0")}`;
+  logger.info(`Numéro attribué : ${formatted}`);
+  return { number: formatted, sequence: numero, year };
+});
+
+// ───────────────────────────────────────────────────────────
 // 9) Recherche de clients potentiellement en doublon
 //    (même nom approché, même téléphone, ou même email)
 // ───────────────────────────────────────────────────────────

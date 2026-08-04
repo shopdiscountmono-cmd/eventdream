@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot, collection, writeBatch, deleteDoc, getDocs, query, orderBy } from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, listenForegroundMessages, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, uploadQRCode, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
+import { db, auth, createUserAsAdmin, registerPushNotifications, listenForegroundMessages, getNextNumber, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, uploadQRCode, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.41.0 — Adresse structurée rue/CP/ville partout (devis, fiche client, onglet livraison), pas de calcul sans code postal, plafond 100 km, MAJ auto de la fiche client (01/08/2026)";
+const APP_VERSION = "v3.42.1 — Message de partage client complet (n° devis, montant, date, signature) au lieu du lien nu (04/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -306,15 +306,27 @@ const EXPENSE_CATEGORIES = ["Achat matériel", "Maintenance / Réparation", "Car
 const CAT_COLORS = { "Achat matériel": "#3b82f6", "Maintenance / Réparation": "#8b5cf6", "Carburant": "#f97316", "Loyer / Entrepôt": "#ef4444", "Salaires": "#10b981", "Fournitures": "#f59e0b", "Assurance": "#06b6d4", "Autre": "#6b7280" };
 const ICON_LIBRARY = ["🪑","💺","⭕","▬","🟦","🍽️","🍴","🔪","🥄","🍷","🥛","🍾","🥂","☕","🫖","🍶","🔥","⛺","🎪","🎉","🎈","🎀","🕯️","💡","🔦","🪩","🎤","🔊","🎸","📽️","🖼️","🪞","🏳️","➿","🧺","🧻","🪟","🚪","🛋️","🛏️","🚽","🚿","❄️","🌡️","🔌","🔋","🧯","🪜","🛒","📦","🧊","🍳","🥘","🍲","🧁","🎂","🌸","🌹","🌿","🕺"];
 
+// Référence affichée au client : le numéro lisible (DEV-2026-001) s'il a été attribué, sinon
+// l'identifiant technique historique (les devis créés avant la v3.42 n'en ont pas).
+function refDevis(order) {
+  return (order && order.devisNumber) || (order && order.id) || "";
+}
+function refFacture(order) {
+  if (order && order.factureNumber) return order.factureNumber;
+  if (order && order.devisNumber) return order.devisNumber.replace(/^DEV-/, "FAC-");
+  return (order && order.id ? order.id.replace(/^dev/, "facture") : "");
+}
+
 function genDevisId(existingOrders) {
+  // Identifiant TECHNIQUE du document Firestore (jamais montré au client) : c'est le champ
+  // devisNumber, attribué à la validation via getNextNumber, qui porte la référence lisible
+  // DEV-2026-001. Séparer les deux évite de casser les liens confirm.html déjà envoyés.
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
   const todayPattern = new RegExp(`^dev\\d+-${dd}${mm}${yy}`);
   const todayCount = (existingOrders || []).filter(o => todayPattern.test(o.id)).length;
-  // Suffixe court unique (basé sur l'heure) pour garantir l'unicité même si
-  // deux devis sont créés rapidement avec le même numéro du jour.
   const uniq = Date.now().toString(36).slice(-4);
   return `dev${todayCount + 1}-${dd}${mm}${yy}-${uniq}`;
 }
@@ -631,6 +643,23 @@ const TODAY = new Date().toISOString().split("T")[0];
 const D = (n) => new Date(Date.now() + 86400000 * n).toISOString().split("T")[0];
 // Affiche une date ISO (aaaa-mm-jj) au format français jj/mm/aaaa
 const fmtD = (iso) => { if (!iso) return ""; const p = String(iso).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso; };
+
+// Message envoyé au client avec le lien de confirmation. Un lien nu, collé au milieu d'une
+// phrase, ressemble à du phishing : ici le numéro de devis et le montant permettent au client
+// de reconnaître sa demande AVANT de cliquer, le lien est isolé sur sa propre ligne, et le
+// message est signé avec le téléphone de l'entreprise.
+function buildDevisMessage(order, link, settings, total, opts = {}) {
+  const nom = (order.clientName || "").trim().split(" ")[0] || "";
+  const montant = total != null ? `${Number(total).toFixed(2)} €` : "";
+  const dateEvt = order.deliveryDate ? fmtD(order.deliveryDate) : "";
+  const tel = (settings && settings.phone) || "";
+  const societe = (settings && settings.companyName) || "EventDream";
+  if (opts.court) {
+    // Version SMS : plus compacte, mais garde numéro + montant + lien sur sa ligne.
+    return `Bonjour ${nom}, votre devis ${societe} n° ${refDevis(order)}${montant ? ` — ${montant}` : ""}${dateEvt ? ` (${dateEvt})` : ""} :\n${link}\n${societe}${tel ? ` — ${tel}` : ""}`;
+  }
+  return `Bonjour ${nom},\n\nVoici votre devis ${societe} n° ${refDevis(order)}${montant ? ` d'un montant de ${montant}` : ""}${dateEvt ? ` pour le ${dateEvt}` : ""}.\n\nVous pouvez le consulter, le confirmer et régler votre acompte ici :\n${link}\n\nÀ bientôt !\n${societe}${tel ? `\n${tel}` : ""}`;
+}
 // Convertit un numéro français au format international attendu par WhatsApp.
 // "06 52 40 98 32" → "33652409832". Sans cette conversion, WhatsApp répond
 // "Le nom de profil 0652409832 n'existe pas".
@@ -740,7 +769,7 @@ function buildPdfBlob(order, settings, mode = "devis", stock = []) {
 
     doc.setFontSize(15); doc.setFont("helvetica", "bold");
     doc.text(isFacture ? "FACTURE" : "DEVIS", W - m, 14, { align: "right" });
-    doc.setFontSize(11); doc.text(isFacture ? order.id.replace(/^dev/, "facture") : order.id, W - m, 21, { align: "right" });
+    doc.setFontSize(11); doc.text(isFacture ? refFacture(order) : refDevis(order), W - m, 21, { align: "right" });
     doc.setFontSize(8); doc.setFont("helvetica", "normal");
     doc.text(`Date : ${new Date().toLocaleDateString("fr-FR")}`, W - m, 27, { align: "right" });
     if (isFacture && order.deliveryDate) doc.text(`Prestation : ${fmtD(order.deliveryDate)}`, W - m, 31.5, { align: "right" });
@@ -1740,13 +1769,31 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
   const acompteMoyenManquant = () => (parseFloat(form.acompte) || 0) > 0 && !form.acompteMoyen;
   const [saveError, setSaveError] = useState(null);
 
+  // Attribue un numéro de devis lisible (DEV-2026-001) au moment de la VALIDATION uniquement.
+  // Les brouillons gardent leur identifiant technique : un brouillon abandonné ne doit pas
+  // consommer de numéro. L'attribution passe par une Cloud Function transactionnelle, seule
+  // garantie qu'aucun doublon ne soit émis si deux personnes valident au même instant.
+  const attribuerNumero = async (f) => {
+    const finalStatus = computeFinalStatus(f.status);
+    if (finalStatus === "Brouillon" || f.devisNumber) return { ...f, status: finalStatus };
+    try {
+      const { number } = await getNextNumber("devis");
+      return { ...f, status: finalStatus, devisNumber: number };
+    } catch (e) {
+      // Échec réseau : on enregistre quand même le devis (le numéro pourra être attribué plus
+      // tard), plutôt que de faire perdre la saisie à l'utilisateur.
+      console.error("Attribution du numéro de devis impossible :", e);
+      return { ...f, status: finalStatus };
+    }
+  };
+
   const handleSave = () => {
     if (acompteMoyenManquant()) { setSaveError("⚠️ Merci de sélectionner le moyen de paiement de l'acompte avant d'enregistrer."); return; }
     setSaveError(null);
     const shortages = stockShortage(form, allOrders, stock);
     if (shortages.length > 0) { setStockAlert(shortages); return; }
     finalisedRef.current = true;
-    onSave({ ...form, status: computeFinalStatus(form.status) }); onClose();
+    attribuerNumero(form).then(f => { onSave(f); onClose(); });
   };
   // Réduit les quantités au stock disponible puis enregistre.
   // Gère aussi les kits : si le manque vient d'un composant à l'intérieur d'un kit, c'est la
@@ -1780,12 +1827,14 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
         return it;
       }
     }).filter(it => (parseInt(it.qty) || 0) > 0);
-    const newForm = { ...form, items: reduced, status: computeFinalStatus(form.status) };
     setStockAlert(null);
     finalisedRef.current = true;
-    onSave(newForm); onClose();
+    attribuerNumero({ ...form, items: reduced }).then(f => { onSave(f); onClose(); });
   };
-  const saveAnyway = () => { setStockAlert(null); finalisedRef.current = true; onSave({ ...form, status: computeFinalStatus(form.status) }); onClose(); };
+  const saveAnyway = () => {
+    setStockAlert(null); finalisedRef.current = true;
+    attribuerNumero(form).then(f => { onSave(f); onClose(); });
+  };
 
   // Enregistre le devis en cours comme BROUILLON (même incomplet), pour le finir plus tard.
   const saveDraft = () => {
@@ -1888,7 +1937,7 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
           </div>
           <div style={{ background: "#f0f4ff", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 12, color: "#6b7280" }}>Référence devis</span>
-            <span style={{ fontFamily: "monospace", fontWeight: 800, color: "#1a1a2e" }}>{form.id}</span>
+            <span style={{ fontFamily: "monospace", fontWeight: 800, color: "#1a1a2e" }}>{form.devisNumber || "attribuée à la validation"}</span>
           </div>
         </div>
       )}
@@ -2428,17 +2477,17 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
               <div style={{ display: "flex", gap: 8 }}>
                 <Btn variant="secondary" size="sm" onClick={() => {
                   const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                  const msg = `Bonjour ${order.clientName},\n\nVoici votre devis EventDream :\n${link}\n\nVous pouvez confirmer et payer votre acompte directement via ce lien. À bientôt !`;
+                  const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings));
                   window.location.href = `whatsapp://send?phone=${toWaNumber(order.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
                 }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
                 <Btn variant="secondary" size="sm" onClick={() => {
                   const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                  const msg = `Bonjour ${order.clientName}, voici votre devis EventDream : ${link}`;
+                  const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings), { court: true });
                   window.open(`sms:${order.clientPhone}?&body=${encodeURIComponent(msg)}`);
                 }} style={{ flex: 1 }}>📱 SMS</Btn>
                 <Btn variant="secondary" size="sm" onClick={() => {
                   const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                  navigator.clipboard.writeText(link);
+                  navigator.clipboard.writeText(buildDevisMessage(order, link, settings, orderTotal(order, settings)));
                 }} style={{ flex: 1 }}>📋 Copier</Btn>
               </div>
             </div>
@@ -3481,7 +3530,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
                 const MOYEN = { paypal: "💙 PayPal", virement: "🏦 Virement", especes: "💵 Espèces", cheque: "📄 Chèque", cb: "💳 CB" };
                 return (
                   <tr key={o.id} style={{ borderTop: "1px solid #f0f0f0", background: idx % 2 === 0 ? "#fff" : "#fafafa" }}>
-                    <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#666" }}>{o.id}</td>
+                    <td style={{ padding: "12px 16px", fontFamily: "monospace", fontSize: 12, color: "#666" }}>{refDevis(o)}</td>
                     <td style={{ padding: "12px 16px", fontWeight: 700 }}>{o.clientName}</td>
                     <td style={{ padding: "12px 16px", fontSize: 13, color: "#666" }}>{fmtD(o.deliveryDate) || "—"}</td>
                     <td style={{ padding: "12px 16px" }}><Badge status={o.status} /></td>
@@ -4183,7 +4232,7 @@ function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery
     return (
       <Card style={{ marginBottom: 10, borderLeft: `4px solid #3b82f6` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-          <div><div style={{ fontSize: 16, fontWeight: 800 }}>{order.clientName}</div><div style={{ fontSize: 11, color: "#999", fontFamily: "monospace" }}>{order.id}</div></div>
+          <div><div style={{ fontSize: 16, fontWeight: 800 }}>{order.clientName}</div><div style={{ fontSize: 11, color: "#999", fontFamily: "monospace" }}>{refDevis(order)}</div></div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
             <Badge status={order.status} />
             {isToday && <span style={{ fontSize: 10, fontWeight: 800, background: "#fee2e2", color: "#b91c1c", borderRadius: 6, padding: "1px 8px" }}>AUJOURD'HUI</span>}
@@ -4336,7 +4385,7 @@ function RetoursView({ orders, stock, settings, onRetour }) {
           return (
             <Card key={o.id} style={{ marginBottom: 10 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                <div><div style={{ fontSize: 16, fontWeight: 800 }}>{o.clientName}</div><div style={{ fontSize: 11, color: "#999", fontFamily: "monospace" }}>{o.id}</div></div>
+                <div><div style={{ fontSize: 16, fontWeight: 800 }}>{o.clientName}</div><div style={{ fontSize: 11, color: "#999", fontFamily: "monospace" }}>{refDevis(o)}</div></div>
                 <Badge status={o.status} />
               </div>
               <div style={{ fontSize: 13, color: "#666", marginBottom: 4 }}>↩️ Retour prévu : {fmtD(o.returnDate) || "—"}{o.returnTime ? ` à ${o.returnTime}` : ""}</div>
@@ -5492,11 +5541,26 @@ function AppInner() {
   // Partage devis PDF
   const sharePdf = async (order, mode = "devis") => {
     try {
+      // Une facture reçoit son numéro au moment où elle est générée, et jamais avant : c'est ce
+      // qui garantit une séquence continue et sans trou (exigence légale). Une fois attribué, le
+      // numéro est figé sur la commande et réutilisé si la facture est régénérée.
+      if (mode === "facture" && !order.factureNumber) {
+        try {
+          const { number } = await getNextNumber("facture");
+          order = { ...order, factureNumber: number };
+          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, factureNumber: number } : o));
+        } catch (e) {
+          console.error("Attribution du numéro de facture impossible :", e);
+        }
+      }
       const blob = await buildPdfBlob(order, settings, mode, stock);
-      const prefix = mode === "facture" ? order.id.replace(/^dev/, "facture") : order.id;
-      const datePart = (order.deliveryDate || "").split("-").reverse().join("-"); // jj-mm-aaaa
-      const clientPart = (order.clientName || "client").replace(/[^a-zA-Z0-9À-ÿ]+/g, "_");
-      const fname = [prefix, datePart, clientPart].filter(Boolean).join("_") + ".pdf";
+      // Nom de fichier lisible par le client : "Devis DEV-2026-001 - Jean Dupont.pdf".
+      // L'ancien format (référence technique + date) ressemblait à un lien douteux une fois
+      // reçu sur WhatsApp.
+      const label = mode === "facture" ? "Facture" : "Devis";
+      const ref = mode === "facture" ? refFacture(order) : refDevis(order);
+      const clientPart = (order.clientName || "client").replace(/[^a-zA-Z0-9À-ÿ '-]+/g, " ").replace(/\s+/g, " ").trim();
+      const fname = `${label} ${ref}${clientPart ? " - " + clientPart : ""}.pdf`;
       // Volontairement simple : on télécharge le PDF, point final. Aucune fenêtre de partage,
       // aucun lien généré par l'app, aucun partage natif déclenché par notre code (instable en
       // PWA installée) — l'utilisateur choisit lui-même son app de partage depuis ses
@@ -5760,7 +5824,7 @@ function AppInner() {
                             {!["Clôturée", "Devis"].includes(order.status) && <span style={{ fontSize: 11, fontWeight: 800, color: phaseColor, background: phaseColor + "18", borderRadius: 8, padding: "2px 10px" }}>{phaseLabel}</span>}
                           </div>
                           <div style={{ fontSize: 12, color: "#666" }}>
-                            <span style={{ fontFamily: "monospace", color: "#999" }}>{order.id}</span>
+                            <span style={{ fontFamily: "monospace", color: "#999" }}>{refDevis(order)}</span>
                             {order.deliveryDate && <span> · 📅 {fmtD(order.deliveryDate)}</span>}
                             {order.createdBy && <span style={{ color: "#9ca3af" }}> · ✍️ {order.createdBy.split("@")[0]}</span>}
                           </div>
@@ -5819,17 +5883,19 @@ function AppInner() {
                         <div style={{ display: "flex", gap: 8 }}>
                           <Btn variant="secondary" size="sm" onClick={() => {
                             const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                            const msg = `Bonjour ${order.clientName},\n\nVoici votre devis EventDream :\n${link}\n\nVous pouvez confirmer et payer votre acompte directement via ce lien. À bientôt !`;
+                            const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings));
                             window.location.href = `whatsapp://send?phone=${toWaNumber(order.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
                           }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
                           <Btn variant="secondary" size="sm" onClick={() => {
                             const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                            const msg = `Bonjour ${order.clientName}, voici votre devis EventDream : ${link}`;
+                            const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings), { court: true });
                             window.open(`sms:${order.clientPhone}?&body=${encodeURIComponent(msg)}`);
                           }} style={{ flex: 1 }}>📱 SMS</Btn>
                           <Btn variant="secondary" size="sm" onClick={() => {
+                            // Copie le message complet (pas seulement l'URL) : un lien nu collé
+                            // dans une conversation ressemble à du spam.
                             const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                            navigator.clipboard.writeText(link);
+                            navigator.clipboard.writeText(buildDevisMessage(order, link, settings, orderTotal(order, settings)));
                           }} style={{ flex: 1 }}>📋 Copier</Btn>
                         </div>
                       </div>

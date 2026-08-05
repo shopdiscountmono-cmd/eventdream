@@ -14,6 +14,8 @@
     .logo{text-align:center;padding:8px 0 24px}
     .logo h1{font-size:28px;font-weight:900;color:var(--navy);letter-spacing:-0.5px}
     .logo p{font-size:13px;color:var(--muted);margin-top:4px}
+    .wa-banner-link{display:block;text-align:center;background:#dcfce7;color:#065f46;border-radius:12px;padding:10px 14px;font-size:13px;font-weight:600;text-decoration:none;margin-bottom:16px}
+    .wa-banner-link strong{font-weight:800}
     .step-bar{display:flex;gap:6px;margin-bottom:24px}
     .step-bar div{flex:1;height:5px;border-radius:5px;background:var(--border);transition:background .3s}
     .step-bar div.done{background:var(--green)}
@@ -103,6 +105,7 @@
 <div class="wrap">
   <div class="topbar"><button class="lang-btn" onclick="toggleLang()">🌐 EN / FR</button></div>
   <div class="logo"><h1>EventDream</h1><p id="logo-sub">Demande de devis en ligne</p></div>
+  <div id="wa-banner"></div>
   <div id="app"><div style="text-align:center;padding:60px;color:#94a3b8">⏳</div></div>
 </div>
 <script type="module">
@@ -151,6 +154,8 @@ submit:"Envoyer ma demande",next:"Suivant",back:"Retour",
 ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande de devis. Notre équipe vous recontacte très rapidement pour la confirmer.",
 req:"Merci de remplir les champs obligatoires",free_text:"Demande spéciale (optionnel)",free_text_ph:"Articles non listés, couleurs, précisions...",
 email_err:"Adresse email invalide (vérifiez le @ et le domaine) — ou laissez le champ vide",
+phone_err:"Numéro de téléphone invalide (10 chiffres, ex: 06 50 12 34 56)",
+wa_contact:"Une question ? Contactez-nous sur WhatsApp :",
 consult:"🔗 Consulter mon devis",
 ret_err:"La date de retour doit être postérieure à la date de livraison/retrait",
 rue:"Numéro et rue",cp:"Code postal",ville:"Ville",
@@ -176,6 +181,8 @@ submit:"Send my request",next:"Next",back:"Back",
 ok_title:"Request sent!",ok_text:"We have received your quote request. Our team will contact you shortly to confirm it.",
 req:"Please fill in the required fields",free_text:"Special request (optional)",free_text_ph:"Unlisted items, colors, details...",
 email_err:"Invalid email address (check the @ and domain) — or leave it empty",
+phone_err:"Invalid phone number (10 digits, e.g. 06 50 12 34 56)",
+wa_contact:"Any question? Contact us on WhatsApp:",
 consult:"🔗 View my quote",
 ret_err:"Return date must be after the delivery/pickup date",
 rue:"Street number and name",cp:"Postal code",ville:"City",
@@ -184,7 +191,7 @@ cp_err:"Invalid postal code (5 digits expected)",
 hors_zone:"Address outside our delivery area — we will contact you with a custom quote.",
 frais_apres:"Delivery fees confirmed by our team"}};
 const t=k=>T[lang][k]||k;
-window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
+window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");renderWaBanner();render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
 const TODAY=new Date().toISOString().slice(0,10);
 const nextDay=d=>{if(!d)return TODAY;const dt=new Date(d);dt.setDate(dt.getDate()+1);return dt.toISOString().slice(0,10)};
@@ -193,7 +200,21 @@ async function loadData(){
   const[stockSnap,settingsSnap]=await Promise.all([getDocs(collection(db,"stock")),getDoc(doc(db,"app","settings"))]);
   stockItems=stockSnap.docs.map(d=>({...d.data(),id:d.id})).filter(s=>s.name&&(s.price||0)>0);
   settings=settingsSnap.exists()?(settingsSnap.data().value||settingsSnap.data()||{}):{};
+  renderWaBanner();
   render();
+}
+
+// Bandeau "Nous contacter sur WhatsApp" : affiché en permanence au-dessus du formulaire, sur les
+// 4 étapes (contrairement au reste du contenu, ce bloc n'est jamais régénéré par render(), donc
+// il reste visible tout du long) — pour qu'un client pressé ou hésitant puisse joindre l'équipe
+// directement plutôt que de remplir le formulaire.
+function renderWaBanner(){
+  const el=document.getElementById("wa-banner");
+  if(!el)return;
+  const tel=(settings.phone||"").replace(/[^0-9+]/g,"");
+  if(!tel){el.innerHTML="";return;}
+  const num=tel.replace(/^0/,"33").replace(/^\+/,"");
+  el.innerHTML=`<a href="https://wa.me/${num}" target="_blank" rel="noopener" class="wa-banner-link">💬 ${t("wa_contact")} <strong>${settings.phone}</strong></a>`;
 }
 
 async function computeDistance(origin,dest){
@@ -583,6 +604,11 @@ window.goStep1=()=>{
   form.email=document.getElementById("f-email")?.value||"";
   const err=document.getElementById("err1");
   if(!form.name.trim()||!form.phone.trim()){err.textContent=t("req");err.style.display="block";return;}
+  // Format téléphone français : 10 chiffres commençant par 0, ou +33/0033 suivi de 9 chiffres.
+  // Espaces, points et tirets tolérés dans la saisie (ex: "06 50 12 34 56").
+  const phoneDigits=form.phone.trim().replace(/[\s.\-]/g,"");
+  const phoneValide=/^0[1-9]\d{8}$/.test(phoneDigits)||/^(\+33|0033)[1-9]\d{8}$/.test(phoneDigits);
+  if(!phoneValide){err.textContent=t("phone_err");err.style.display="block";return;}
   // L'email reste facultatif (le téléphone suffit à recevoir le devis par WhatsApp/SMS), mais
   // s'il est saisi, on vérifie un format minimal — sinon un email mal tapé (ex: sans "@") passe
   // silencieusement et l'envoi automatique du lien de consultation échoue sans que personne ne

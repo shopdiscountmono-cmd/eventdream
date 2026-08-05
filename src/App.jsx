@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.42.1 — Message de partage client complet (n° devis, montant, date, signature) au lieu du lien nu (04/08/2026)";
+const APP_VERSION = "v3.43.1 — Fix saisie adresse (espaces perdus / CP-ville melanges a la rue) + confirm.html : total corrige (livraison auto km/min desormais comptee) (04/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -643,6 +643,20 @@ const TODAY = new Date().toISOString().split("T")[0];
 const D = (n) => new Date(Date.now() + 86400000 * n).toISOString().split("T")[0];
 // Affiche une date ISO (aaaa-mm-jj) au format français jj/mm/aaaa
 const fmtD = (iso) => { if (!iso) return ""; const p = String(iso).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso; };
+// Date + heure de création d'un devis (createdAt), affichée séparément de la date de
+// prestation pour ne jamais les confondre visuellement — l'une dit "quand la demande est
+// arrivée", l'autre "quand l'événement a lieu".
+const fmtCreated = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const jj = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mn = String(d.getMinutes()).padStart(2, "0");
+  const yearSuffix = d.getFullYear() !== new Date().getFullYear() ? `/${d.getFullYear()}` : "";
+  return `${jj}/${mm}${yearSuffix} à ${hh}h${mn}`;
+};
 
 // Message envoyé au client avec le lien de confirmation. Un lien nu, collé au milieu d'une
 // phrase, ressemble à du phishing : ici le numéro de devis et le montant permettent au client
@@ -993,23 +1007,26 @@ const MAX_DELIVERY_KM = 100;
 // Trio de champs adresse. `value` est l'adresse complète en une chaîne ; `onChange` la renvoie
 // recomposée (ou "" tant qu'elle est incomplète, pour bloquer le calcul de distance).
 function AddressFields({ label, value, onChange, compact }) {
-  // Tampon local : permet de saisir les champs un par un sans que la valeur parente (vide tant
-  // que l'adresse est incomplète) ne réinitialise ce qui vient d'être tapé.
+  // BUG CORRIGÉ : la version précédente comparait `value` (prop) à une chaîne mémorisée pour
+  // décider de resynchroniser les 3 champs. Problème : à CHAQUE frappe, onChange remontait une
+  // valeur au parent, qui la renvoyait aussitôt en prop — et cette valeur ne correspondait pas
+  // toujours exactement à ce qui avait été mémorisé (adresse incomplète recomposée différemment
+  // par l'appelant). Le composant se re-segmentait alors en pleine frappe, écrasant ce que
+  // l'utilisateur venait de taper : espaces perdus, code postal/ville recollés dans la rue.
+  // Fix : un simple drapeau "on vient d'écrire nous-mêmes" suffit à ignorer cet écho, sans jamais
+  // comparer de chaînes. On ne resynchronise QUE sur un changement venu de l'extérieur (ex: clic
+  // sur une adresse connue du client).
   const [parts, setParts] = useState(() => splitAddress(value));
-  const lastEmitted = useRef(joinAddress(splitAddress(value)));
-  // Resynchronise si l'adresse change depuis l'extérieur (choix d'un client, autre onglet...)
+  const skipNextSync = useRef(false);
   useEffect(() => {
-    if (value !== lastEmitted.current) {
-      setParts(splitAddress(value));
-      lastEmitted.current = value;
-    }
+    if (skipNextSync.current) { skipNextSync.current = false; return; }
+    setParts(splitAddress(value));
   }, [value]);
   const upd = (k, v) => {
     const next = { ...parts, [k]: v };
     setParts(next);
-    const joined = joinAddress(next);
-    lastEmitted.current = joined;
-    onChange(joined, next);
+    skipNextSync.current = true;
+    onChange(joinAddress(next), next);
   };
   const incomplet = (parts.rue || parts.cp || parts.ville) && !joinAddress(parts);
   return (
@@ -2394,7 +2411,13 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
       <div style={{ background: "linear-gradient(135deg, #1a1a2e, #16213e)", color: "#fff", borderRadius: 16, padding: 20, marginBottom: 14 }}>
         <div style={{ fontSize: 11, opacity: 0.6 }}>FICHE {order.deliveryMode === "livraison" ? "LIVRAISON" : "RETRAIT"}</div>
         <div style={{ fontSize: 19, fontWeight: 900 }}>{order.id} — {order.clientName}</div>
-        {order.createdBy && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>✍️ Créé par {order.createdBy.split("@")[0]}</div>}
+        {(order.createdBy || order.createdAt) && (
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>
+            {order.createdBy && <>✍️ Créé par {order.createdBy.split("@")[0]}</>}
+            {order.createdBy && order.createdAt && " · "}
+            {order.createdAt && <>🕐 le {fmtCreated(order.createdAt)}</>}
+          </div>
+        )}
         <div style={{ opacity: 0.75, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13 }}>
           {order.deliveryDate && <span>📅 {fmtD(order.deliveryDate)}{order.deliveryTime ? ` à ${order.deliveryTime}` : ""}</span>}
           {order.returnDate && <span>↩️ {fmtD(order.returnDate)}{order.returnTime ? ` à ${order.returnTime}` : ""}</span>}
@@ -2475,19 +2498,22 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
               <div style={{ fontSize: 12, color: "#666", fontWeight: 700 }}>🔗 Lien de confirmation client :</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <Btn variant="secondary" size="sm" onClick={() => {
-                  const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                  const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings));
-                  window.location.href = `whatsapp://send?phone=${toWaNumber(order.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
+                <Btn variant="secondary" size="sm" onClick={async () => {
+                  const o = await ensureDevisNumber(order);
+                  const link = `${window.location.origin}/confirm.html?id=${o.id}`;
+                  const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings));
+                  window.location.href = `whatsapp://send?phone=${toWaNumber(o.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
                 }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
-                <Btn variant="secondary" size="sm" onClick={() => {
-                  const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                  const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings), { court: true });
-                  window.open(`sms:${order.clientPhone}?&body=${encodeURIComponent(msg)}`);
+                <Btn variant="secondary" size="sm" onClick={async () => {
+                  const o = await ensureDevisNumber(order);
+                  const link = `${window.location.origin}/confirm.html?id=${o.id}`;
+                  const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings), { court: true });
+                  window.open(`sms:${o.clientPhone}?&body=${encodeURIComponent(msg)}`);
                 }} style={{ flex: 1 }}>📱 SMS</Btn>
-                <Btn variant="secondary" size="sm" onClick={() => {
-                  const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                  navigator.clipboard.writeText(buildDevisMessage(order, link, settings, orderTotal(order, settings)));
+                <Btn variant="secondary" size="sm" onClick={async () => {
+                  const o = await ensureDevisNumber(order);
+                  const link = `${window.location.origin}/confirm.html?id=${o.id}`;
+                  navigator.clipboard.writeText(buildDevisMessage(o, link, settings, orderTotal(o, settings)));
                 }} style={{ flex: 1 }}>📋 Copier</Btn>
               </div>
             </div>
@@ -5435,7 +5461,17 @@ function AppInner() {
     return [newOrder, ...prev];
   });
   const [askConfirm, ConfirmUI] = useConfirm();
-  const deleteOrder = async (id) => { if (await askConfirm("Supprimer cette commande ?")) setOrders(prev => prev.filter(o => o.id !== id), true); };
+  const deleteOrder = async (id) => {
+    // Une facture émise ne peut jamais être supprimée : la loi impose une séquence FAC-xxx
+    // continue et sans trou. Si le client annule après facturation, la marche à suivre est un
+    // avoir (ou un changement de statut vers "Annulée"), jamais une suppression du document.
+    const order = orders.find(o => o.id === id);
+    if (order && order.factureNumber) {
+      alert(`Cette commande porte la facture ${order.factureNumber} et ne peut pas être supprimée (la loi impose une séquence de factures continue, sans trou).\n\nSi la commande est annulée, conservez-la telle quelle dans l'historique et émettez un avoir si un remboursement est nécessaire — ne supprimez jamais une commande facturée.`);
+      return;
+    }
+    if (await askConfirm("Supprimer cette commande ?")) setOrders(prev => prev.filter(o => o.id !== id), true);
+  };
   const updateStatus = async (id, status) => {
     // Garde-fou AVANT acceptation : si la commande passe d'un état "devis" (qui ne réserve pas
     // le stock) à un état actif (qui le réserve), on vérifie la disponibilité sur la période
@@ -5538,9 +5574,27 @@ function AppInner() {
     return { ...o, acompte: total, soldeMoyen: moyen, soldeDate: new Date().toISOString().slice(0, 10) };
   }));
 
+  // Attribue le numéro DEV-2026-xxx à une commande qui n'en a pas encore, quel que soit le canal
+  // de partage (PDF, lien WhatsApp/SMS, copie) : c'est la sortie de l'app vers le client qui
+  // déclenche l'attribution, pas la validation seule — un brouillon jamais envoyé n'en consomme
+  // aucun, mais tout document qui atteint un client en porte toujours un. Retourne la commande
+  // à jour (avec devisNumber) pour que l'appelant construise le message/PDF avec la bonne réf.
+  const ensureDevisNumber = async (order) => {
+    if (order.devisNumber) return order;
+    try {
+      const { number } = await getNextNumber("devis");
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, devisNumber: number } : o));
+      return { ...order, devisNumber: number };
+    } catch (e) {
+      console.error("Attribution du numéro de devis impossible :", e);
+      return order;
+    }
+  };
+
   // Partage devis PDF
   const sharePdf = async (order, mode = "devis") => {
     try {
+      order = await ensureDevisNumber(order);
       // Une facture reçoit son numéro au moment où elle est générée, et jamais avant : c'est ce
       // qui garantit une séquence continue et sans trou (exigence légale). Une fois attribué, le
       // numéro est figé sur la commande et réutilisé si la facture est régénérée.
@@ -5561,13 +5615,34 @@ function AppInner() {
       const ref = mode === "facture" ? refFacture(order) : refDevis(order);
       const clientPart = (order.clientName || "client").replace(/[^a-zA-Z0-9À-ÿ '-]+/g, " ").replace(/\s+/g, " ").trim();
       const fname = `${label} ${ref}${clientPart ? " - " + clientPart : ""}.pdf`;
-      // Volontairement simple : on télécharge le PDF, point final. Aucune fenêtre de partage,
-      // aucun lien généré par l'app, aucun partage natif déclenché par notre code (instable en
-      // PWA installée) — l'utilisateur choisit lui-même son app de partage depuis ses
-      // Téléchargements, en utilisant le bouton natif de son téléphone sur le fichier.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = fname; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      // Message qui accompagne le PDF — même contenu que le message WhatsApp/SMS (numéro, montant,
+      // date, signature), pour que le PDF ne parte jamais "nu" sans contexte pour le client.
+      const link = `${window.location.origin}/confirm.html?id=${order.id}`;
+      const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings));
+      const file = new File([blob], fname, { type: "application/pdf" });
+
+      // Partage natif en priorité (fichier + texte dans une seule action, ouvre le sélecteur
+      // WhatsApp/Mail/etc. du téléphone). En repli — natif indisponible ou refusé par le système
+      // (fréquent en PWA installée) — on télécharge le PDF et on copie le message dans le
+      // presse-papiers, pour que rien ne se perde silencieusement.
+      let partageNatifReussi = false;
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], text: msg, title: fname });
+          partageNatifReussi = true;
+        } catch (e) {
+          if (e && e.name === "AbortError") { partageNatifReussi = true; } // annulé par l'utilisateur : pas une erreur
+        }
+      }
+      if (!partageNatifReussi) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url; a.download = fname; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        try {
+          await navigator.clipboard.writeText(msg);
+          alert("📄 PDF téléchargé et message copié — collez-le dans votre conversation avec le fichier.");
+        } catch (e) { /* presse-papiers indisponible : le PDF reste téléchargé, tant pis pour le message */ }
+      }
     } catch (e) { console.error(e); alert("Erreur lors de la génération du PDF."); }
   };
 
@@ -5828,6 +5903,7 @@ function AppInner() {
                             {order.deliveryDate && <span> · 📅 {fmtD(order.deliveryDate)}</span>}
                             {order.createdBy && <span style={{ color: "#9ca3af" }}> · ✍️ {order.createdBy.split("@")[0]}</span>}
                           </div>
+                          {order.createdAt && <div style={{ fontSize: 11, color: "#b8bcc4", marginTop: 1 }}>🕐 Devis créé le {fmtCreated(order.createdAt)}</div>}
                         </div>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -5881,21 +5957,24 @@ function AppInner() {
                           );
                         })()}
                         <div style={{ display: "flex", gap: 8 }}>
-                          <Btn variant="secondary" size="sm" onClick={() => {
-                            const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                            const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings));
-                            window.location.href = `whatsapp://send?phone=${toWaNumber(order.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
+                          <Btn variant="secondary" size="sm" onClick={async () => {
+                            const o = await ensureDevisNumber(order);
+                            const link = `${window.location.origin}/confirm.html?id=${o.id}`;
+                            const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings));
+                            window.location.href = `whatsapp://send?phone=${toWaNumber(o.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
                           }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
-                          <Btn variant="secondary" size="sm" onClick={() => {
-                            const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                            const msg = buildDevisMessage(order, link, settings, orderTotal(order, settings), { court: true });
-                            window.open(`sms:${order.clientPhone}?&body=${encodeURIComponent(msg)}`);
+                          <Btn variant="secondary" size="sm" onClick={async () => {
+                            const o = await ensureDevisNumber(order);
+                            const link = `${window.location.origin}/confirm.html?id=${o.id}`;
+                            const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings), { court: true });
+                            window.open(`sms:${o.clientPhone}?&body=${encodeURIComponent(msg)}`);
                           }} style={{ flex: 1 }}>📱 SMS</Btn>
-                          <Btn variant="secondary" size="sm" onClick={() => {
+                          <Btn variant="secondary" size="sm" onClick={async () => {
                             // Copie le message complet (pas seulement l'URL) : un lien nu collé
                             // dans une conversation ressemble à du spam.
-                            const link = `${window.location.origin}/confirm.html?id=${order.id}`;
-                            navigator.clipboard.writeText(buildDevisMessage(order, link, settings, orderTotal(order, settings)));
+                            const o = await ensureDevisNumber(order);
+                            const link = `${window.location.origin}/confirm.html?id=${o.id}`;
+                            navigator.clipboard.writeText(buildDevisMessage(o, link, settings, orderTotal(o, settings)));
                           }} style={{ flex: 1 }}>📋 Copier</Btn>
                         </div>
                       </div>

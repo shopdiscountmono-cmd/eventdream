@@ -478,6 +478,70 @@ exports.syncExpensesSheet = onDocumentWritten(
 // URL publique de la fonction de désabonnement (callable depuis n'importe quel email envoyé).
 const UNSUBSCRIBE_URL = `https://${REGION}-eventdream-app.cloudfunctions.net/unsubscribe`;
 
+// Envoie au client le lien de consultation de son devis (confirm.html), juste après qu'il a
+// rempli le formulaire public devis.html. SANS authentification requise (le client n'est jamais
+// connecté à Firebase Auth) — la seule protection est de vérifier que le devis existe bien et
+// qu'il vient d'être créé, pour éviter qu'on utilise cette fonction pour spammer une adresse
+// email à répétition avec un vieux devis.
+exports.sendDevisConfirmationEmail = onCall(
+  { region: REGION, secrets: [BREVO_API_KEY] },
+  async (request) => {
+    const { orderId } = request.data || {};
+    if (!orderId) throw new HttpsError("invalid-argument", "orderId requis.");
+
+    const orderSnap = await db.collection("orders").doc(orderId).get();
+    if (!orderSnap.exists) throw new HttpsError("not-found", "Devis introuvable.");
+    const order = orderSnap.data();
+
+    if (!order.clientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(order.clientEmail)) {
+      return { skipped: true, reason: "email manquant ou invalide" };
+    }
+    // Anti-abus : cette fonction n'est censée être appelée qu'une fois, juste après la création
+    // du devis par devis.html. Un appel sur un devis vieux de plus de 10 minutes est suspect.
+    const ageMinutes = order.createdAt ? (Date.now() - new Date(order.createdAt).getTime()) / 60000 : Infinity;
+    if (ageMinutes > 10) throw new HttpsError("failed-precondition", "Ce devis n'est plus éligible à l'envoi automatique.");
+
+    const settingsSnap = await db.collection("app").doc("settings").get();
+    const settings = settingsSnap.exists ? settingsSnap.data().value : {};
+    const senderEmail = settings.campaignSenderEmail;
+    const senderName = settings.campaignSenderName || settings.companyName || "EventDream";
+    if (!senderEmail) return { skipped: true, reason: "aucun email expéditeur configuré (Réglages → Campagnes)" };
+
+    const link = `https://eventdream.vercel.app/confirm.html?id=${orderId}`;
+    const total = (order.items || []).reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseInt(i.qty) || 0), 0);
+    const ref = order.devisNumber || orderId;
+    const nom = (order.clientName || "").trim().split(" ")[0] || "";
+    const html = `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#1a1a2e">
+        <h2 style="margin-bottom:4px">${senderName}</h2>
+        <p>Bonjour ${nom},</p>
+        <p>Voici votre devis <strong>n° ${ref}</strong>${total ? ` d'un montant de <strong>${total.toFixed(2)} €</strong>` : ""}${order.deliveryDate ? ` pour le <strong>${fmtDateFr(order.deliveryDate)}</strong>` : ""}.</p>
+        <p>Vous pouvez le consulter, le confirmer et régler votre acompte à tout moment ici :</p>
+        <p><a href="${link}" style="display:inline-block;padding:12px 24px;background:#1a1a2e;color:#fff;border-radius:10px;text-decoration:none;font-weight:700">Consulter mon devis</a></p>
+        <p style="color:#666;font-size:13px">À bientôt !<br/>${senderName}${settings.phone ? `<br/>${settings.phone}` : ""}</p>
+      </div>`;
+
+    try {
+      const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: { "api-key": BREVO_API_KEY.value(), "Content-Type": "application/json", "accept": "application/json" },
+        body: JSON.stringify({
+          sender: { name: senderName, email: senderEmail },
+          to: [{ email: order.clientEmail, name: order.clientName || order.clientEmail }],
+          subject: `Votre devis ${senderName} n° ${ref}`,
+          htmlContent: html,
+        }),
+      });
+      if (!res.ok) { logger.error(`Échec envoi email confirmation devis ${orderId} : ${res.status} ${await res.text()}`); return { skipped: true, reason: "échec envoi Brevo" }; }
+      logger.info(`Email de consultation envoyé pour le devis ${orderId} à ${order.clientEmail}.`);
+      return { sent: true };
+    } catch (e) {
+      logger.error(`Erreur envoi email confirmation devis ${orderId} :`, e.message);
+      return { skipped: true, reason: e.message };
+    }
+  }
+);
+
 exports.sendCampaign = onCall(
   { region: REGION, secrets: [BREVO_API_KEY] },
   async (request) => {

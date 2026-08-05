@@ -79,6 +79,7 @@
     .success .ic{font-size:64px;margin-bottom:16px}
     .success h2{font-size:22px;font-weight:900;color:var(--green);margin-bottom:10px;justify-content:center}
     .success p{color:var(--muted);font-size:14px;line-height:1.6;max-width:340px;margin:0 auto}
+    .consult-link{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:12px;background:var(--navy);color:#fff;font-weight:800;font-size:14px;text-decoration:none}
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -107,8 +108,11 @@
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import{getFirestore,doc,getDoc,collection,getDocs,setDoc}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import{getFunctions,httpsCallable}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
-const db=getFirestore(initializeApp(cfg));
+const fbApp=initializeApp(cfg);
+const db=getFirestore(fbApp);
+const fns=getFunctions(fbApp,"europe-west9");
 const MAPS_KEY="AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU";
 
 let lang="fr",step=1,stockItems=[],settings={};
@@ -146,6 +150,8 @@ acompte_note:"Vous recevrez les instructions de paiement par message après vali
 submit:"Envoyer ma demande",next:"Suivant",back:"Retour",
 ok_title:"Demande envoyée !",ok_text:"Nous avons bien reçu votre demande de devis. Notre équipe vous recontacte très rapidement pour la confirmer.",
 req:"Merci de remplir les champs obligatoires",free_text:"Demande spéciale (optionnel)",free_text_ph:"Articles non listés, couleurs, précisions...",
+email_err:"Adresse email invalide (vérifiez le @ et le domaine) — ou laissez le champ vide",
+consult:"🔗 Consulter mon devis",
 ret_err:"La date de retour doit être postérieure à la date de livraison/retrait",
 rue:"Numéro et rue",cp:"Code postal",ville:"Ville",
 addr_incomplete:"Complétez le code postal et la ville pour calculer les frais",
@@ -169,6 +175,8 @@ acompte_note:"You will receive payment instructions by message after validation.
 submit:"Send my request",next:"Next",back:"Back",
 ok_title:"Request sent!",ok_text:"We have received your quote request. Our team will contact you shortly to confirm it.",
 req:"Please fill in the required fields",free_text:"Special request (optional)",free_text_ph:"Unlisted items, colors, details...",
+email_err:"Invalid email address (check the @ and domain) — or leave it empty",
+consult:"🔗 View my quote",
 ret_err:"Return date must be after the delivery/pickup date",
 rue:"Street number and name",cp:"Postal code",ville:"City",
 addr_incomplete:"Enter postal code and city to calculate delivery fees",
@@ -529,6 +537,13 @@ window.goStep1=()=>{
   form.email=document.getElementById("f-email")?.value||"";
   const err=document.getElementById("err1");
   if(!form.name.trim()||!form.phone.trim()){err.textContent=t("req");err.style.display="block";return;}
+  // L'email reste facultatif (le téléphone suffit à recevoir le devis par WhatsApp/SMS), mais
+  // s'il est saisi, on vérifie un format minimal — sinon un email mal tapé (ex: sans "@") passe
+  // silencieusement et l'envoi automatique du lien de consultation échoue sans que personne ne
+  // s'en rende compte.
+  if(form.email.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())){
+    err.textContent=t("email_err");err.style.display="block";return;
+  }
   step=2;render();
 };
 window.goStep2=()=>{
@@ -585,10 +600,18 @@ window.submitForm=async()=>{
       acompte:0,acomptePct:form.acomptePct,
       createdAt:new Date().toISOString(),createdBy:"web-client"
     });
-    document.getElementById("app").innerHTML=`<div class="card success"><div class="ic">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p></div>`;
+    document.getElementById("app").innerHTML=`<div class="card success"><div class="ic">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p><a href="/confirm.html?id=${id}" class="consult-link">${t("consult")}</a></div>`;
     window.scrollTo(0,0);
     // Événement Facebook : demande de devis envoyée avec succès (utilisé pour le suivi des campagnes pub)
     if(typeof fbq==="function"){fbq('track','Lead');}
+    // Envoi automatique du lien de consultation par email si le client en a renseigné un.
+    // Best-effort : une erreur ici (mail non configuré côté Réglages, Brevo indisponible...) ne
+    // doit jamais empêcher le client de voir l'écran de succès — le lien affiché ci-dessus et le
+    // partage manuel par l'équipe restent toujours disponibles en secours.
+    if(form.email&&form.email.trim()){
+      try{ await httpsCallable(fns,"sendDevisConfirmationEmail")({orderId:id}); }
+      catch(e){ console.warn("Envoi email confirmation devis : échec silencieux :",e.message); }
+    }
   }catch(e){
     btn.disabled=false;btn.textContent="✅ "+t("submit");
     const err=document.getElementById("err4");

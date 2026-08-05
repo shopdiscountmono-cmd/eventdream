@@ -25,6 +25,7 @@
     .choice-btn{width:100%;padding:14px;border-radius:12px;border:2px solid #e5e7eb;background:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;text-align:left;font-family:inherit}
     .choice-btn.sel{border-color:#3b82f6;background:#eff6ff;color:#1d4ed8}
     .pay-btn{width:100%;padding:16px;border-radius:14px;border:none;background:#1a1a2e;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-top:8px}
+    .modif-btn{display:block;width:100%;padding:13px;border-radius:12px;border:1.5px solid #e5e7eb;background:#fff;color:#374151;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;text-decoration:none;box-sizing:border-box}
     .qr-box{text-align:center;padding:16px;background:#f8f9fa;border-radius:12px;margin-top:12px}
     .qr-box img{width:180px;height:180px;border-radius:10px;object-fit:contain;background:#fff}
     .paylink{display:block;padding:15px 20px;color:#fff;border-radius:12px;font-weight:800;font-size:15px;text-decoration:none;text-align:center}
@@ -57,24 +58,106 @@ const db=getFirestore(initializeApp(cfg));
 let lang="fr",order=null,settings=null,pct=30,method="revolut";
 const T={fr:{sub:"Confirmation de votre devis",title:"Votre devis",items:"Articles",total:"Total",date:"Date",ret:"Retour",mode_liv:"🚚 Livraison",mode_ret:"🏠 Retrait entrepôt",choose:"Choisir le montant à payer",p30:"30% d'acompte — réservation",p100:"100% — paiement complet",pay:"Payer avec",scan:"Scannez ce QR code pour payer",amt:"Montant :",iban:"IBAN",copy:"📋 Copier l'IBAN",btn:"✅ J'ai effectué le paiement",legal:"En cliquant, je confirme avoir effectué le paiement du montant indiqué. Le devis sera validé après réception et vérification du paiement par EventDream.",ok_title:"Merci pour votre déclaration de paiement !",ok_text:"Votre paiement est en cours de vérification. Vous recevrez une confirmation dès que nous aurons reçu votre règlement. À très bientôt !",err:"Devis introuvable.",already:"Votre paiement est en cours de vérification. Merci !",cond:"En confirmant, vous acceptez les conditions générales de location.",
 paybtn:"Payer",scan2:"Ou scannez ce QR code depuis un autre appareil",
-caution:"🔒 Caution à prévoir",caution_sub:"À prévoir le jour de la livraison / du retrait — restituée à la fin de la location (hors casse)"},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",legal:"By clicking, I confirm having made the payment of the indicated amount. The quote will be validated after receipt and verification of your payment by EventDream.",ok_title:"Thank you for your payment declaration!",ok_text:"Your payment is being verified. You will receive a confirmation once we have received your payment. See you soon!",err:"Quote not found.",already:"Your payment is being verified. Thank you!",cond:"By confirming, you agree to the rental terms.",
+caution:"🔒 Caution à prévoir",caution_sub:"À prévoir le jour de la livraison / du retrait — restituée à la fin de la location (hors casse)",
+askmod:"✏️ Demander une modification",askmod_msg:"Bonjour, j'aimerais modifier mon devis"},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",legal:"By clicking, I confirm having made the payment of the indicated amount. The quote will be validated after receipt and verification of your payment by EventDream.",ok_title:"Thank you for your payment declaration!",ok_text:"Your payment is being verified. You will receive a confirmation once we have received your payment. See you soon!",err:"Quote not found.",already:"Your payment is being verified. Thank you!",cond:"By confirming, you agree to the rental terms.",
 paybtn:"Pay",scan2:"Or scan this QR code from another device",
-caution:"🔒 Security deposit",caution_sub:"Required on delivery / pickup day — refunded at the end of the rental (unless damage)"}};
+caution:"🔒 Security deposit",caution_sub:"Required on delivery / pickup day — refunded at the end of the rental (unless damage)",
+askmod:"✏️ Request a change",askmod_msg:"Hello, I'd like to modify my quote"}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
-const calcTotal=o=>{const sub=(o.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseInt(i.qty)||0),0);const disc=o.discountType==="percent"?sub*(parseFloat(o.discountValue)||0)/100:(parseFloat(o.discountValue)||0);const del=parseFloat(o.deliveryPriceManual)||0;return Math.max(0,sub-disc)+del};
+// Référence lisible du devis (DEV-2026-001 une fois attribuée par l'équipe, sinon l'id technique).
+const refDevisC=o=>(o&&o.devisNumber)||(o&&o.id)||"";
+// ─── Calcul du total : réplique fidèlement la logique de l'app (App.jsx) ───
+// BUG CORRIGÉ : cette page ne lisait auparavant QUE order.deliveryPriceManual (le tarif de
+// livraison saisi À LA MAIN par l'équipe). Si la livraison est au contraire calculée
+// automatiquement depuis la distance (cas normal : bouton "Recalculer" / km + min stockés),
+// deliveryPriceManual reste vide et le total affiché ici oubliait complètement la livraison
+// (constaté : total à 97,00 € au lieu de 247,20 € avec livraison). On recalcule maintenant les
+// mêmes composantes que l'app : trajet auto ou manuel, étage, mise en place, jours supplémentaires.
+function calcTrajetUnit(km,minutes,s){
+  if(km<=0)return 0;
+  const forfait=s.minDeliveryPrice||0;
+  const seuilKm=s.seuilKm!=null?s.seuilKm:(s.minKmThreshold||0);
+  const seuilMin=s.seuilMin!=null?s.seuilMin:0;
+  return forfait+Math.max(0,km-seuilKm)*(s.pricePerKm||0)+Math.max(0,(minutes||0)-seuilMin)*(s.pricePerMin||0);
+}
+function deliveryCostOf(o,s){
+  if(o.deliveryMode!=="livraison")return 0;
+  if(o.deliveryPriceManual!=null&&o.deliveryPriceManual!=="")return parseFloat(o.deliveryPriceManual)||0;
+  const unit=calcTrajetUnit(parseFloat(o.deliveryKm)||0,parseFloat(o.deliveryMin)||0,s);
+  let total=0;
+  if(o.trajetAller!==false)total+=unit;
+  if(o.trajetRetour)total+=unit;
+  return total;
+}
+function deliveryExtrasCost(o){
+  let total=0;
+  if(o.etageActive)total+=parseFloat(o.etagePrice)||0;
+  if(o.miseEnPlaceActive)total+=parseFloat(o.miseEnPlacePrice)||0;
+  return total;
+}
+function orderSubtotalC(o){
+  return (o.items||[]).reduce((s,i)=>{
+    const base=(parseInt(i.qty)||0)*(parseFloat(i.price)||0);
+    const cleaning=i.cleaningSelected?(parseInt(i.qty)||0)*(parseFloat(i.cleaningPrice)||0):0;
+    return s+base+cleaning;
+  },0);
+}
+function orderDiscountC(o){
+  const sub=orderSubtotalC(o);
+  return o.discountType==="percent"?sub*((parseFloat(o.discountValue)||0)/100):(parseFloat(o.discountValue)||0);
+}
+function extraDaysCostC(o,s){
+  if(o.extraDaysPriceManual!=null&&o.extraDaysPriceManual!=="")return parseFloat(o.extraDaysPriceManual)||0;
+  if(!o.deliveryDate||!o.returnDate)return 0;
+  const standard=s.standardDays!=null&&s.standardDays>0?s.standardDays:2;
+  const d1=new Date(o.deliveryDate+"T12:00:00"),d2=new Date(o.returnDate+"T12:00:00");
+  const totalDays=Math.round((d2-d1)/86400000);
+  const periodes=Math.max(0,Math.ceil(totalDays/standard)-1);
+  return periodes>0?periodes*orderSubtotalC(o):0;
+}
+const calcTotal=o=>{
+  const sub=orderSubtotalC(o);
+  const disc=orderDiscountC(o);
+  const del=deliveryCostOf(o,settings)+deliveryExtrasCost(o);
+  const extra=extraDaysCostC(o,settings);
+  return Math.max(0,sub-disc)+del+extra;
+};
+// Construit la carte récapitulatif (articles, remise, livraison, jours supplémentaires,
+// total, dates, caution). Réutilisée par render() (devis en attente de paiement) ET par
+// renderConfirmed() (devis déjà confirmé, consultable à tout moment par le client — y compris
+// après une mise à jour faite par l'équipe, puisque la page relit toujours Firestore en direct).
+function buildRecapCard(o){
+  const total=calcTotal(o);
+  const items=(o.items||[]).map(i=>`<div class="row"><span style="color:#444">${i.icon||"📦"} ${i.name}</span><span style="font-weight:700">×${i.qty} — ${((parseFloat(i.price)||0)*parseInt(i.qty)).toFixed(2)} €</span></div>`).join("");
+  const del=deliveryCostOf(o,settings)+deliveryExtrasCost(o);
+  const disc=orderDiscountC(o);
+  const extraDays=extraDaysCostC(o,settings);
+  const cautionAmt=parseFloat(o.cautionAmount)||0;
+  const cautionBox=cautionAmt>0?`<div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px 14px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="min-width:0"><div style="font-size:12px;color:#6d28d9;font-weight:800">${t("caution")}</div><div style="font-size:11px;color:#7c3aed;margin-top:3px;line-height:1.4">${t("caution_sub")}</div></div><div style="font-size:19px;font-weight:900;color:#6d28d9;white-space:nowrap">${cautionAmt.toFixed(2)} €</div></div>`:"";
+  return `<div class="card"><h2>📋 ${t("items")}</h2>${items}${disc>0?`<div class="row"><span style="color:#666">Remise</span><span style="font-weight:700;color:#10b981">−${disc.toFixed(2)} €</span></div>`:""}${del>0?`<div class="row"><span style="color:#666">🚚 Livraison</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}${extraDays>0?`<div class="row"><span style="color:#666">📅 Jours supplémentaires</span><span style="font-weight:700">${extraDays.toFixed(2)} €</span></div>`:""}<div class="row" style="font-size:16px"><span><strong>${t("total")}</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div><div class="row"><span style="color:#666">${t("date")}</span><span style="font-weight:700">${fmtD(o.deliveryDate)}</span></div>${o.returnDate?`<div class="row"><span style="color:#666">${t("ret")}</span><span style="font-weight:700">${fmtD(o.returnDate)}</span></div>`:""}<div class="row"><span style="color:#666">Mode</span><span style="font-weight:700">${o.deliveryMode==="livraison"?t("mode_liv"):t("mode_ret")}</span></div>${cautionBox}</div>`;
+}
+// Lien "Demander une modification" (WhatsApp pré-rempli vers l'équipe, avec la référence du devis).
+function modifBtn(o){
+  const num=(settings.phone||"").replace(/[^0-9]/g,"").replace(/^0/,"33");
+  return `<a class="modif-btn" href="https://wa.me/${num}?text=${encodeURIComponent(t("askmod_msg")+" ("+(o.devisNumber||o.id)+").")}" target="_blank" rel="noopener">${t("askmod")}</a>`;
+}
+// Devis déjà confirmé : le client peut revenir sur ce même lien à tout moment pour consulter
+// la version À JOUR (la page relit Firestore à chaque ouverture) — utile si l'équipe modifie
+// le devis après confirmation. Pas de section paiement ici, juste la consultation + un moyen
+// de demander un changement.
+function renderConfirmed(o){
+  document.getElementById("app").innerHTML=`
+    <div class="header"><div class="lbl">${t("title")}</div><div class="id">${o.devisNumber||o.id}</div><div class="client">${o.clientName}</div></div>
+    <div class="card success-box" style="padding:20px"><div class="icon" style="font-size:40px;margin-bottom:6px">✅</div><h2 style="font-size:16px">${t("already")}</h2></div>
+    ${buildRecapCard(o)}
+    ${modifBtn(o)}
+    <p class="cond">${t("cond")}</p>`;
+}
 function render(){
   if(!order)return;
   const total=calcTotal(order),acompte=Math.round(total*pct)/100;
-  const items=(order.items||[]).map(i=>`<div class="row"><span style="color:#444">${i.icon||"📦"} ${i.name}</span><span style="font-weight:700">×${i.qty} — ${((parseFloat(i.price)||0)*parseInt(i.qty)).toFixed(2)} €</span></div>`).join("");
-  const del=parseFloat(order.deliveryPriceManual)||0;
-  const sub=(order.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseInt(i.qty)||0),0);
-  const disc=order.discountType==="percent"?sub*(parseFloat(order.discountValue)||0)/100:(parseFloat(order.discountValue)||0);
-  // Caution : montant exact calculé par l'app EventDream et stocké sur la commande
-  // (champ cautionAmount) — le client est informé AVANT le jour de la livraison/du retrait.
-  const cautionAmt=parseFloat(order.cautionAmount)||0;
-  const cautionBox=cautionAmt>0?`<div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px 14px;margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px"><div style="min-width:0"><div style="font-size:12px;color:#6d28d9;font-weight:800">${t("caution")}</div><div style="font-size:11px;color:#7c3aed;margin-top:3px;line-height:1.4">${t("caution_sub")}</div></div><div style="font-size:19px;font-weight:900;color:#6d28d9;white-space:nowrap">${cautionAmt.toFixed(2)} €</div></div>`:"";
   const methods=[];
   // Une méthode est proposée dès qu'un lien OU un QR est configuré (avant : le QR était
   // obligatoire, donc un lien seul n'apparaissait jamais).
@@ -97,10 +180,11 @@ function render(){
   }
   else if(method==="virement"&&settings.iban)qr=`<div class="iban-box"><div style="font-size:12px;color:#666">${t("iban")}</div><div class="iban-val">${settings.iban}</div><div style="font-size:12px;color:#666;margin-bottom:8px">${t("amt")} <strong>${acompte.toFixed(2)} €</strong></div><button class="copy-btn" onclick="navigator.clipboard.writeText('${settings.iban}')">${t("copy")}</button></div>`;
   document.getElementById("app").innerHTML=`
-    <div class="header"><div class="lbl">${t("title")}</div><div class="id">${order.id}</div><div class="client">${order.clientName}</div></div>
-    <div class="card"><h2>📋 ${t("items")}</h2>${items}${disc>0?`<div class="row"><span style="color:#666">Remise</span><span style="font-weight:700;color:#10b981">−${disc.toFixed(2)} €</span></div>`:""}${del>0?`<div class="row"><span style="color:#666">🚚 Livraison</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:""}<div class="row" style="font-size:16px"><span><strong>${t("total")}</strong></span><span style="font-weight:900;font-size:18px">${total.toFixed(2)} €</span></div><div class="row"><span style="color:#666">${t("date")}</span><span style="font-weight:700">${fmtD(order.deliveryDate)}</span></div>${order.returnDate?`<div class="row"><span style="color:#666">${t("ret")}</span><span style="font-weight:700">${fmtD(order.returnDate)}</span></div>`:""}<div class="row"><span style="color:#666">Mode</span><span style="font-weight:700">${order.deliveryMode==="livraison"?t("mode_liv"):t("mode_ret")}</span></div>${cautionBox}</div>
+    <div class="header"><div class="lbl">${t("title")}</div><div class="id">${refDevisC(order)}</div><div class="client">${order.clientName}</div></div>
+    ${buildRecapCard(order)}
     <div class="card"><h2>💰 ${t("choose")}</h2><button class="choice-btn${pct===30?" sel":""}" onclick="setPct(30)">30% — ${(total*.3).toFixed(2)} € (${t("p30")})</button><button class="choice-btn${pct===100?" sel":""}" onclick="setPct(100)">100% — ${total.toFixed(2)} € (${t("p100")})</button></div>
     <div class="card"><h2>💳 ${t("pay")}</h2>${tabs}<div class="total-box"><div class="lbl">${t("amt")}</div><div class="amt">${acompte.toFixed(2)} €</div></div>${qr}<div style="background:#fef9c3;border-radius:10px;padding:12px;font-size:12px;color:#92400e;margin-top:12px;line-height:1.5">${t("legal")}</div><button class="pay-btn" onclick="doConfirm()">${t("btn")}</button></div>
+    <a class="modif-btn" href="https://wa.me/${(settings.phone||"").replace(/[^0-9]/g,"").replace(/^0/,"33")}?text=${encodeURIComponent(t("askmod_msg")+" ("+refDevisC(order)+").")}" target="_blank" rel="noopener">${t("askmod")}</a>
     <p class="cond">${t("cond")}</p>`;
 }
 window.setPct=p=>{pct=p;render()};
@@ -130,7 +214,7 @@ window.doConfirm=async()=>{
     order={...oSnap.data(),id:oSnap.id};
     settings=sSnap.exists()?(sSnap.data().value||sSnap.data()||{}):{};
     if(["Confirmée","Préparée","Chez le client","Clôturée"].includes(order.status)){
-      document.getElementById("app").innerHTML=`<div class="card success-box"><div class="icon">✅</div><h2>${t("already")}</h2></div>`;return;
+      renderConfirmed(order);return;
     }
     // Paiement déjà déclaré (le client revient sur le lien) : on affiche l'écran d'attente
     // au lieu du formulaire, pour éviter une double déclaration.

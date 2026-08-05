@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.43.1 — Fix saisie adresse (espaces perdus / CP-ville melanges a la rue) + confirm.html : total corrige (livraison auto km/min desormais comptee) (04/08/2026)";
+const APP_VERSION = "v3.44.0 — WhatsApp/SMS : PDF telecharge automatiquement puis conversation ouverte pre-adressee au client, message pre-rempli (05/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -2498,23 +2498,9 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
               <div style={{ fontSize: 12, color: "#666", fontWeight: 700 }}>🔗 Lien de confirmation client :</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <Btn variant="secondary" size="sm" onClick={async () => {
-                  const o = await ensureDevisNumber(order);
-                  const link = `${window.location.origin}/confirm.html?id=${o.id}`;
-                  const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings));
-                  window.location.href = `whatsapp://send?phone=${toWaNumber(o.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
-                }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
-                <Btn variant="secondary" size="sm" onClick={async () => {
-                  const o = await ensureDevisNumber(order);
-                  const link = `${window.location.origin}/confirm.html?id=${o.id}`;
-                  const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings), { court: true });
-                  window.open(`sms:${o.clientPhone}?&body=${encodeURIComponent(msg)}`);
-                }} style={{ flex: 1 }}>📱 SMS</Btn>
-                <Btn variant="secondary" size="sm" onClick={async () => {
-                  const o = await ensureDevisNumber(order);
-                  const link = `${window.location.origin}/confirm.html?id=${o.id}`;
-                  navigator.clipboard.writeText(buildDevisMessage(o, link, settings, orderTotal(o, settings)));
-                }} style={{ flex: 1 }}>📋 Copier</Btn>
+                <Btn variant="secondary" size="sm" onClick={() => shareOrderVia(order, "whatsapp")} style={{ flex: 1 }}>💬 WhatsApp</Btn>
+                <Btn variant="secondary" size="sm" onClick={() => shareOrderVia(order, "sms")} style={{ flex: 1 }}>📱 SMS</Btn>
+                <Btn variant="secondary" size="sm" onClick={() => shareOrderVia(order, "copy")} style={{ flex: 1 }}>📋 Copier</Btn>
               </div>
             </div>
           )}
@@ -5619,6 +5605,35 @@ function AppInner() {
     }
   };
 
+  // Partage vers un canal précis (WhatsApp, SMS, ou copie).
+  // Les schémas whatsapp://send et sms: ne peuvent techniquement transporter que du texte, jamais
+  // de fichier (limitation de la plateforme, pas un choix de code) — mais ce sont les seuls à
+  // ouvrir directement la conversation DÉJÀ ADRESSÉE au client, message pré-rempli, sans passer
+  // par une fenêtre de sélection d'app (contrairement au partage natif générique). On garde donc
+  // ce comportement direct : le PDF se télécharge d'abord sur le téléphone, puis la conversation
+  // s'ouvre — il ne reste qu'à joindre le fichier déjà présent dans les téléchargements.
+  const shareOrderVia = async (order, channel) => {
+    const o = await ensureDevisNumber(order);
+    const link = `${window.location.origin}/confirm.html?id=${o.id}`;
+    const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings), { court: channel === "sms" });
+    if (channel === "copy") { navigator.clipboard.writeText(msg); return; }
+    try {
+      const blob = await buildPdfBlob(o, settings, "devis", stock);
+      const clientPart = (o.clientName || "client").replace(/[^a-zA-Z0-9À-ÿ '-]+/g, " ").replace(/\s+/g, " ").trim();
+      const fname = `Devis ${refDevis(o)}${clientPart ? " - " + clientPart : ""}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = fname; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (e) {
+      console.error("Téléchargement du PDF impossible avant l'ouverture de la conversation :", e);
+    }
+    // Petite pause pour laisser le téléchargement démarrer avant que le navigateur ne bascule
+    // vers WhatsApp/SMS (sinon il peut être interrompu avant d'être enregistré).
+    await new Promise(r => setTimeout(r, 600));
+    if (channel === "whatsapp") window.location.href = `whatsapp://send?phone=${toWaNumber(o.clientPhone)}&text=${encodeURIComponent(msg)}`;
+    else if (channel === "sms") window.open(`sms:${o.clientPhone}?&body=${encodeURIComponent(msg)}`);
+  };
+
   // Partage devis PDF
   const sharePdf = async (order, mode = "devis") => {
     try {
@@ -5985,25 +6000,9 @@ function AppInner() {
                           );
                         })()}
                         <div style={{ display: "flex", gap: 8 }}>
-                          <Btn variant="secondary" size="sm" onClick={async () => {
-                            const o = await ensureDevisNumber(order);
-                            const link = `${window.location.origin}/confirm.html?id=${o.id}`;
-                            const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings));
-                            window.location.href = `whatsapp://send?phone=${toWaNumber(o.clientPhone)}&text=${encodeURIComponent(msg)}`; // schéma direct : bascule vers WhatsApp sans onglet intermédiaire (évite la page blanche au retour en PWA)
-                          }} style={{ flex: 1 }}>💬 WhatsApp</Btn>
-                          <Btn variant="secondary" size="sm" onClick={async () => {
-                            const o = await ensureDevisNumber(order);
-                            const link = `${window.location.origin}/confirm.html?id=${o.id}`;
-                            const msg = buildDevisMessage(o, link, settings, orderTotal(o, settings), { court: true });
-                            window.open(`sms:${o.clientPhone}?&body=${encodeURIComponent(msg)}`);
-                          }} style={{ flex: 1 }}>📱 SMS</Btn>
-                          <Btn variant="secondary" size="sm" onClick={async () => {
-                            // Copie le message complet (pas seulement l'URL) : un lien nu collé
-                            // dans une conversation ressemble à du spam.
-                            const o = await ensureDevisNumber(order);
-                            const link = `${window.location.origin}/confirm.html?id=${o.id}`;
-                            navigator.clipboard.writeText(buildDevisMessage(o, link, settings, orderTotal(o, settings)));
-                          }} style={{ flex: 1 }}>📋 Copier</Btn>
+                          <Btn variant="secondary" size="sm" onClick={() => shareOrderVia(order, "whatsapp")} style={{ flex: 1 }}>💬 WhatsApp</Btn>
+                          <Btn variant="secondary" size="sm" onClick={() => shareOrderVia(order, "sms")} style={{ flex: 1 }}>📱 SMS</Btn>
+                          <Btn variant="secondary" size="sm" onClick={() => shareOrderVia(order, "copy")} style={{ flex: 1 }}>📋 Copier</Btn>
                         </div>
                       </div>
                     )}

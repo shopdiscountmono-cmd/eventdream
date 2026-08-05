@@ -285,6 +285,8 @@ const cpValide=()=>/^\d{5}$/.test((form.cp||"").trim());
 const adresseComplete=()=>!!(form.rue||"").trim()&&cpValide()&&!!(form.ville||"").trim();
 
 let debounceTimer=null;
+let cpLookupTimer=null,cpLookupToken=0;
+let villeLookupTimer=null,villeLookupToken=0;
 // Jeton incrémenté à chaque nouvelle saisie : permet d'ignorer une réponse API qui reviendrait
 // après qu'une saisie plus récente ait déjà lancé sa propre vérification (sinon une réponse
 // "en retard" peut écraser un statut plus à jour et afficher un message erroné).
@@ -298,6 +300,50 @@ window.onAddrField=(champ,val)=>{
   form.address=fullAddress();
   clearTimeout(debounceTimer);
   const myToken=++addrReqToken;
+  // Recherche auto CP → Ville / Ville → CP (API officielle geo.api.gouv.fr, gratuite, sans clé).
+  // Ne remplit jamais un champ déjà renseigné — seulement l'autre, s'il est encore vide — pour ne
+  // jamais risquer d'écraser ce que le client est en train de taper.
+  if(champ==="cp"){
+    clearTimeout(cpLookupTimer);
+    if(/^\d{5}$/.test(val)&&!form.ville){
+      const myCpToken=++cpLookupToken;
+      cpLookupTimer=setTimeout(async()=>{
+        try{
+          const r=await fetch(`https://geo.api.gouv.fr/communes?codePostal=${val}&fields=nom&format=json`);
+          const data=await r.json();
+          if(myCpToken!==cpLookupToken)return;
+          if(data&&data[0]&&data[0].nom&&!form.ville&&form.cp===val){
+            form.ville=data[0].nom;
+            const villeInput=document.getElementById("f-ville");
+            if(villeInput)villeInput.value=form.ville;
+            onAddrField("ville",form.ville);
+          }
+        }catch(e){/* API indisponible : le champ reste à compléter à la main */}
+      },500);
+    }
+  }
+  if(champ==="ville"){
+    clearTimeout(villeLookupTimer);
+    const villeVal=val.trim();
+    if(villeVal.length>=3&&!form.cp){
+      const myVilleToken=++villeLookupToken;
+      villeLookupTimer=setTimeout(async()=>{
+        try{
+          const r=await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(villeVal)}&fields=nom,codesPostaux&boost=population&limit=1`);
+          const data=await r.json();
+          if(myVilleToken!==villeLookupToken)return;
+          const codes=data&&data[0]&&data[0].codesPostaux;
+          // N'auto-remplit que si un seul code postal correspond (sinon ambigu, ex: Paris).
+          if(Array.isArray(codes)&&codes.length===1&&!form.cp&&form.ville===villeVal){
+            form.cp=codes[0];
+            const cpInput=document.getElementById("f-cp");
+            if(cpInput)cpInput.value=form.cp;
+            onAddrField("cp",form.cp);
+          }
+        }catch(e){/* API indisponible : le champ reste à compléter à la main */}
+      },500);
+    }
+  }
   if(!adresseComplete()){
     form.addrStatus="incomplete";form.deliveryKm=0;form.deliveryMin=0;
     updateAddrStatusDom();

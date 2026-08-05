@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.44.0 — WhatsApp/SMS : PDF telecharge automatiquement puis conversation ouverte pre-adressee au client, message pre-rempli (05/08/2026)";
+const APP_VERSION = "v3.44.1 — Sections Devis en attente toujours repliees a chaque ouverture, recherche auto CP<->Ville (App + devis.html) via API gouv.fr (05/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -1028,6 +1028,59 @@ function AddressFields({ label, value, onChange, compact }) {
     skipNextSync.current = true;
     onChange(joinAddress(next), next);
   };
+  // Recherche auto CP → Ville et Ville → CP, via l'API officielle du gouvernement (geo.api.gouv.fr,
+  // gratuite, sans clé). Ne remplit JAMAIS un champ déjà renseigné par l'utilisateur — seulement
+  // l'autre champ, quand il est encore vide — pour ne courir aucun risque d'écraser une saisie en
+  // cours (même précaution que le bug corrigé plus haut sur ce composant).
+  const cpLookupToken = useRef(0);
+  useEffect(() => {
+    if (!isCpValide(parts.cp) || parts.ville) return;
+    const myToken = ++cpLookupToken.current;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://geo.api.gouv.fr/communes?codePostal=${parts.cp}&fields=nom&format=json`);
+        const data = await res.json();
+        if (myToken !== cpLookupToken.current) return; // une saisie plus récente a pris le relais
+        const nom = data && data[0] && data[0].nom;
+        if (!nom) return;
+        setParts(p => {
+          if (p.ville || !isCpValide(p.cp)) return p; // revérifie l'état le plus frais
+          const merged = { ...p, ville: nom };
+          skipNextSync.current = true;
+          onChange(joinAddress(merged), merged);
+          return merged;
+        });
+      } catch (e) { /* API indisponible : le champ reste à compléter à la main */ }
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parts.cp]);
+  const villeLookupToken = useRef(0);
+  useEffect(() => {
+    const ville = (parts.ville || "").trim();
+    if (ville.length < 3 || parts.cp) return;
+    const myToken = ++villeLookupToken.current;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(ville)}&fields=nom,codesPostaux&boost=population&limit=1`);
+        const data = await res.json();
+        if (myToken !== villeLookupToken.current) return;
+        // N'auto-remplit que si la ville a un seul code postal (sinon ambigu, ex: Paris en a 20 —
+        // mieux vaut laisser l'utilisateur préciser lui-même l'arrondissement).
+        const codes = data && data[0] && data[0].codesPostaux;
+        if (!Array.isArray(codes) || codes.length !== 1) return;
+        setParts(p => {
+          if (p.cp || (p.ville || "").trim().length < 3) return p;
+          const merged = { ...p, cp: codes[0] };
+          skipNextSync.current = true;
+          onChange(joinAddress(merged), merged);
+          return merged;
+        });
+      } catch (e) { /* API indisponible : le champ reste à compléter à la main */ }
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parts.ville]);
   const incomplet = (parts.rue || parts.cp || parts.ville) && !joinAddress(parts);
   return (
     <div>
@@ -5445,19 +5498,15 @@ function AppInner() {
   }, [viewOrder]);
 
   // Pli/dépli des 3 groupes de la vue "Devis en attente" (0=web, 1=manuels, 2=brouillons).
-  // Repliées par défaut, et l'état choisi par l'utilisateur est mémorisé sur cet appareil
-  // (localStorage) pour ne pas avoir à tout replier à nouveau à chaque rechargement.
-  const [collapsedSections, setCollapsedSections] = useState(() => {
-    try {
-      const saved = localStorage.getItem("ed_collapsedDevisSections");
-      if (saved) return new Set(JSON.parse(saved));
-    } catch (e) {}
-    return new Set([0, 1, 2]);
-  });
+  // Toujours repliées à l'ouverture de cette page — y compris si on la quitte et qu'on y revient
+  // dans la même session — pour repartir sur une liste compacte et choisir soi-même quoi ouvrir.
+  const [collapsedSections, setCollapsedSections] = useState(() => new Set([0, 1, 2]));
+  useEffect(() => {
+    if (view === "devisEnAttente") setCollapsedSections(new Set([0, 1, 2]));
+  }, [view]);
   const toggleSection = (r) => setCollapsedSections(prev => {
     const n = new Set(prev);
     n.has(r) ? n.delete(r) : n.add(r);
-    try { localStorage.setItem("ed_collapsedDevisSections", JSON.stringify([...n])); } catch (e) {}
     return n;
   });
 

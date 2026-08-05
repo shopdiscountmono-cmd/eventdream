@@ -5282,6 +5282,34 @@ function AppInner() {
   const [stock, setStock] = useCollectionState("stock");
   const [expenses, setExpenses] = useCollectionState("expenses");
   const [clients, setClients] = useCollectionState("clients");
+  // ───────────────────────────────────────────────────────────
+  // Synchro fiche client pour les devis créés depuis le formulaire public (devis.html).
+  // BUG CORRIGÉ : la création automatique de fiche client n'existait que dans le formulaire
+  // interne de l'app (à l'enregistrement d'un devis saisi par l'équipe) — un devis arrivé
+  // directement du site web (createdBy: "web-client") écrivait uniquement sur "orders" et
+  // n'apparaissait donc JAMAIS dans Clients, même après confirmation. On répare ça a posteriori :
+  // dès qu'un devis web sans client correspondant (même téléphone) est détecté, sa fiche est créée.
+  // ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!orders.length) return;
+    const normPhone = (s) => String(s || "").replace(/[\s\-.]/g, "").replace(/^(\+33|0033)/, "0").trim();
+    const webOrders = orders.filter(o => o.createdBy === "web-client" && o.clientPhone);
+    if (!webOrders.length) return;
+    const toCreate = [];
+    for (const o of webOrders) {
+      const phone = normPhone(o.clientPhone);
+      const exists = clients.some(c => {
+        const phones = [...(c.phones || []), c.phone || ""].map(normPhone).filter(Boolean);
+        return phones.includes(phone);
+      }) || toCreate.some(c => normPhone(c.phone) === phone);
+      if (!exists) {
+        const addr = (o.address || "").trim();
+        toCreate.push({ id: "cli-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6), name: o.clientName || "Client web", phone: o.clientPhone, phones: [o.clientPhone], email: o.clientEmail || "", address: addr, addresses: addr ? [addr] : [], notes: "" });
+      }
+    }
+    if (toCreate.length) setClients(prev => [...prev, ...toCreate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders]);
   const [settings, setSettings] = useFirestoreState("settings", DEFAULT_SETTINGS);
   const [expenseCategories, setExpenseCategories] = useFirestoreState("expenseCategories", EXPENSE_CATEGORIES);
   const [recurringExpenses, setRecurringExpenses] = useFirestoreState("recurringExpenses", []);

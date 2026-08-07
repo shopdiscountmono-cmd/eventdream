@@ -58,9 +58,11 @@ const db=getFirestore(initializeApp(cfg));
 let lang="fr",order=null,settings=null,pct=30,method="revolut";
 const T={fr:{sub:"Confirmation de votre devis",title:"Votre devis",items:"Articles",total:"Total",date:"Date",ret:"Retour",mode_liv:"🚚 Livraison",mode_ret:"🏠 Retrait entrepôt",choose:"Choisir le montant à payer",p30:"30% d'acompte — réservation",p100:"100% — paiement complet",pay:"Payer avec",scan:"Scannez ce QR code pour payer",amt:"Montant :",iban:"IBAN",copy:"📋 Copier l'IBAN",btn:"✅ J'ai effectué le paiement",legal:"En cliquant, je confirme avoir effectué le paiement du montant indiqué. Le devis sera validé après réception et vérification du paiement par EventDream.",ok_title:"Merci pour votre déclaration de paiement !",ok_text:"Votre paiement est en cours de vérification. Vous recevrez une confirmation dès que nous aurons reçu votre règlement. À très bientôt !",err:"Devis introuvable.",already:"Votre paiement est en cours de vérification. Merci !",cond:"En confirmant, vous acceptez les conditions générales de location.",
 paybtn:"Payer",scan2:"Ou scannez ce QR code depuis un autre appareil",
+revolut_amount_note:"⚠️ Une fois sur Revolut, indiquez vous-même le montant à envoyer :",
 caution:"🔒 Caution à prévoir",caution_sub:"À prévoir le jour de la livraison / du retrait — restituée à la fin de la location (hors casse)",
 askmod:"✏️ Demander une modification",askmod_msg:"Bonjour, j'aimerais modifier mon devis"},en:{sub:"Quote Confirmation",title:"Your Quote",items:"Items",total:"Total",date:"Date",ret:"Return",mode_liv:"🚚 Delivery",mode_ret:"🏠 Warehouse Pickup",choose:"Choose payment amount",p30:"30% deposit — reservation",p100:"100% — full payment",pay:"Pay with",scan:"Scan this QR code to pay",amt:"Amount:",iban:"IBAN",copy:"📋 Copy IBAN",btn:"✅ I have made the payment",legal:"By clicking, I confirm having made the payment of the indicated amount. The quote will be validated after receipt and verification of your payment by EventDream.",ok_title:"Thank you for your payment declaration!",ok_text:"Your payment is being verified. You will receive a confirmation once we have received your payment. See you soon!",err:"Quote not found.",already:"Your payment is being verified. Thank you!",cond:"By confirming, you agree to the rental terms.",
 paybtn:"Pay",scan2:"Or scan this QR code from another device",
+revolut_amount_note:"⚠️ Once on Revolut, please enter the amount to send yourself:",
 caution:"🔒 Security deposit",caution_sub:"Required on delivery / pickup day — refunded at the end of the rental (unless damage)",
 askmod:"✏️ Request a change",askmod_msg:"Hello, I'd like to modify my quote"}};
 const t=k=>T[lang][k]||k;
@@ -166,16 +168,20 @@ function render(){
   if(settings.iban)methods.push(["virement","🏦 Virement"]);
   if(methods.length&&!methods.find(m=>m[0]===method))method=methods[0]?.[0];
   const tabs=methods.length>1?`<div class="method-tabs">${methods.map(([k,l])=>`<button class="method-tab${method===k?" active":""}" onclick="setM('${k}')">${l}</button>`).join("")}</div>`:"";
-  // Construit un lien de paiement avec montant : revolut.me/xxx/99.75 · paypal.me/xxx/99.75EUR
-  // (devise explicite pour PayPal, sinon le montant est interprété dans la devise du compte).
-  const payLink=(base,curr)=>{if(!base)return"";return`${String(base).replace(/\/+$/,"")}/${acompte.toFixed(2)}${curr||""}`};
+  // Le montant dans l'URL n'est officiellement supporté QUE par PayPal.Me (paypal.me/xxx/99.75EUR
+  // — documenté par PayPal lui-même). Revolut.me ne supporte pas ce format : ajouter un montant en
+  // fin de lien (revolut.me/xxx/99.75) fait échouer la reconnaissance et redirige vers une page
+  // générique revolut.com au lieu de la page de paiement — constaté en test réel. Le lien Revolut
+  // reste donc un simple lien de profil ; le montant est affiché à côté pour que le client le
+  // saisisse lui-même une fois arrivé sur Revolut.
+  const payLinkPaypal=(base,curr)=>{if(!base)return"";return`${String(base).replace(/\/+$/,"")}/${acompte.toFixed(2)}${curr||""}`};
   let qr="";
   if(method==="revolut"&&(settings.revolutQR||settings.revolutLink)){
-    const link=payLink(settings.revolutLink);
-    qr=`<div class="qr-box">${link?`<a href="${link}" target="_blank" rel="noopener" class="paylink" style="background:#1a1a2e">💳 ${t("paybtn")} ${acompte.toFixed(2)} € →</a>`:`<div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div>`}${settings.revolutQR?`<div style="font-size:12px;color:#666;margin:14px 0 8px">${link?t("scan2"):t("scan")}</div><img src="${settings.revolutQR}"/>`:""}</div>`;
+    const link=settings.revolutLink?String(settings.revolutLink).replace(/\/+$/,""):"";
+    qr=`<div class="qr-box">${link?`<a href="${link}" target="_blank" rel="noopener" class="paylink" style="background:#1a1a2e">💳 ${t("paybtn")} →</a><div style="font-size:12px;color:#92400e;background:#fef9c3;border-radius:8px;padding:8px 10px;margin-top:10px">${t("revolut_amount_note")} <strong>${acompte.toFixed(2)} €</strong></div>`:`<div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div>`}${settings.revolutQR?`<div style="font-size:12px;color:#666;margin:14px 0 8px">${link?t("scan2"):t("scan")}</div><img src="${settings.revolutQR}"/>`:""}</div>`;
   }
   else if(method==="paypal"&&(settings.paypalQR||settings.paypalLink)){
-    const link=payLink(settings.paypalLink,"EUR");
+    const link=payLinkPaypal(settings.paypalLink,"EUR");
     qr=`<div class="qr-box">${link?`<a href="${link}" target="_blank" rel="noopener" class="paylink" style="background:#003087">💙 ${t("paybtn")} ${acompte.toFixed(2)} € →</a>`:`<div style="font-size:22px;font-weight:900">${acompte.toFixed(2)} €</div>`}${settings.paypalQR?`<div style="font-size:12px;color:#666;margin:14px 0 8px">${link?t("scan2"):t("scan")}</div><img src="${settings.paypalQR}"/>`:""}</div>`;
   }
   else if(method==="virement"&&settings.iban)qr=`<div class="iban-box"><div style="font-size:12px;color:#666">${t("iban")}</div><div class="iban-val">${settings.iban}</div><div style="font-size:12px;color:#666;margin-bottom:8px">${t("amt")} <strong>${acompte.toFixed(2)} €</strong></div><button class="copy-btn" onclick="navigator.clipboard.writeText('${settings.iban}')">${t("copy")}</button></div>`;

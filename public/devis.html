@@ -13,7 +13,18 @@
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Inter',-apple-system,sans-serif;background:var(--cream);min-height:100vh;color:var(--ink);-webkit-font-smoothing:antialiased}
     .serif{font-family:'Cormorant Garamond',serif}
-    .wrap{max-width:560px;margin:0 auto;padding:16px 16px 40px}
+    .wrap{max-width:560px;margin:0 auto;padding:16px 16px 40px;transition:max-width .2s}
+    .wrap.wide{max-width:920px}
+    @media (min-width:700px){
+      .prod-grid{grid-template-columns:repeat(3,1fr)}
+      .prod-photo{height:110px}
+    }
+    @media (min-width:900px){
+      .prod-grid{grid-template-columns:repeat(4,1fr)}
+      .cart-bar{max-width:888px}
+      .sheet-backdrop{align-items:center}
+      .sheet{max-width:420px;border-radius:22px;max-height:80vh}
+    }
     .topbar{display:flex;justify-content:flex-end;padding:4px 0}
     .lang-btn{background:#fff;border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--muted)}
     .logo{text-align:center;padding:14px 0 18px}
@@ -93,8 +104,8 @@
     .prod-price{font-size:12px;color:var(--gold);font-weight:700;margin-top:2px}
     .prod-price span{color:#B8A99A;font-weight:500}
     .prod-qty{display:flex;align-items:center;justify-content:space-between;padding:9px 10px 10px}
-    .qty-val{font-size:14px;font-weight:700;color:var(--ink);min-width:16px;text-align:center}
-    .qty-val.big{font-size:19px;min-width:22px}
+    .qty-input{width:46px;padding:6px 2px;border-radius:10px;border:1.5px solid var(--border);text-align:center;font-size:14px;font-weight:800;font-family:inherit;margin:0;color:var(--ink);-webkit-appearance:none}
+    .qty-input.big{width:58px;font-size:18px;padding:8px 4px}
     .dispo-line{font-size:10.5px;color:#9CA3AF;padding:0 10px 9px;font-weight:600}
     .dispo-line.max{color:#c2410c}
     .empty-cat{grid-column:1/-1;text-align:center;color:var(--muted);font-size:13px;padding:24px 0}
@@ -137,7 +148,7 @@
   <!-- End Meta Pixel Code -->
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="wrap">
   <div class="topbar"><button class="lang-btn" onclick="toggleLang()">🌐 EN / FR</button></div>
   <div class="logo"><h1 class="serif">EVENTDREAM</h1><div class="rule"></div><p id="logo-sub">Composez votre devis</p></div>
   <div id="wa-banner"></div>
@@ -496,7 +507,7 @@ function renderDetailSheet(id){
       ${dispoLineHtml(id,qty)}
       <div class="sheet-qty">
         <button class="qty-btn minus big" onclick="decQty('${id}')" ${qty<=0?"disabled":""}>−</button>
-        <span class="qty-val big">${qty}</span>
+        <input type="number" inputmode="numeric" class="qty-input big" value="${qty}" min="0" onchange="setQty('${id}',parseInt(this.value)||0)"/>
         <button class="qty-btn plus big" onclick="incQty('${id}')" ${max!==Infinity&&qty>=max?"disabled":""}>+</button>
       </div>
       ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[id+"_washing"]?"checked":""} onchange="toggleOpt('${id}_washing',this.checked)"/><span class="box"></span>🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
@@ -506,6 +517,12 @@ function renderDetailSheet(id){
 }
 
 function render(){
+  // Le catalogue profite d'un conteneur plus large sur tablette/desktop (plus de colonnes
+  // visibles) ; les étapes formulaire (dates, coordonnées, récap) restent à une largeur de
+  // lecture confortable — des champs de saisie étirés sur toute la largeur d'un écran large
+  // seraient inconfortables à utiliser.
+  const wrapEl=document.getElementById("wrap");
+  if(wrapEl)wrapEl.classList.toggle("wide",step===2);
   const steps=[t("s1"),t("s2"),t("s3"),t("s4")];
   const bar=`<div class="step-bar">${steps.map((_,i)=>`<div class="${i<step-1?"done":i===step-1?"active":""}"></div>`).join("")}</div>`;
 
@@ -590,7 +607,7 @@ function render(){
         </div>
         <div class="prod-qty">
           <button class="qty-btn minus" onclick="decQty('${item.id}')" ${qty<=0?"disabled":""}>−</button>
-          <span class="qty-val">${qty}</span>
+          <input type="number" inputmode="numeric" class="qty-input" value="${qty}" min="0" onclick="event.stopPropagation()" onchange="setQty('${item.id}',parseInt(this.value)||0)"/>
           <button class="qty-btn plus" onclick="incQty('${item.id}')" ${max!==Infinity&&qty>=max?"disabled":""}>+</button>
         </div>
         ${dispoLineHtml(item.id,qty)}

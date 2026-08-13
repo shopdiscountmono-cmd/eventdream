@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>EventDream — Location de matériel événementiel</title>
+  <title>EventDream — Location de matériel événementiel à Villejuif</title>
+  <meta name="description" content="Location de mobilier, vaisselle et décoration événementielle à Villejuif (94). Mariages, anniversaires, henné, baptêmes. Devis gratuit en ligne."/>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
     :root{--cream:#FBF6EF;--panel:#F3E9DE;--ink:#3A2E26;--muted:#8A7A6D;--gold:#B8935A;--border:#E4D8C8}
@@ -11,7 +12,8 @@
     body{font-family:'Inter',-apple-system,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
     .serif{font-family:'Cormorant Garamond',serif}
     a{color:inherit}
-    .wrap{max-width:560px;margin:0 auto;padding:0 0 40px}
+    img{max-width:100%}
+    .wrap{max-width:560px;margin:0 auto}
     @media (min-width:700px){.wrap{max-width:900px}}
     @media (min-width:1100px){.wrap{max-width:1080px}}
 
@@ -22,16 +24,34 @@
     .hero{position:relative;width:100%;aspect-ratio:4/5;max-height:640px;overflow:hidden;background:linear-gradient(135deg,var(--panel),var(--cream))}
     @media (min-width:700px){.hero{aspect-ratio:16/8}}
     .hero video,.hero img{width:100%;height:100%;object-fit:cover;display:block}
-    .hero-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(58,46,38,.72) 0%,rgba(58,46,38,.15) 55%,rgba(58,46,38,.05) 100%);display:flex;flex-direction:column;justify-content:flex-end;padding:32px 24px}
-    .hero-title{font-family:'Cormorant Garamond',serif;color:#fff;font-size:38px;font-weight:600;line-height:1.05;max-width:520px}
-    .hero-sub{color:#F0E6D8;font-size:14px;margin-top:10px;max-width:440px;line-height:1.5}
-    .cta-btn{display:inline-block;margin-top:20px;padding:15px 30px;border-radius:14px;background:var(--gold);color:var(--ink);font-weight:800;font-size:15px;text-decoration:none;letter-spacing:.01em}
-    .cta-btn.secondary{background:transparent;border:1.5px solid #fff;color:#fff;margin-left:10px}
+    .hero-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(58,46,38,.75) 0%,rgba(58,46,38,.25) 55%,rgba(58,46,38,.08) 100%);display:flex;flex-direction:column;justify-content:flex-end;padding:32px 20px}
+    @media (min-width:700px){.hero-overlay{padding:48px 40px}}
+    .hero-title{font-family:'Cormorant Garamond',serif;color:#fff;font-size:36px;font-weight:600;line-height:1.08;max-width:560px}
+    @media (min-width:700px){.hero-title{font-size:50px}}
+    .hero-sub{color:#F0E6D8;font-size:14px;margin-top:10px;max-width:460px;line-height:1.55}
+    .cta-row{margin-top:22px;display:flex;gap:10px;flex-wrap:wrap}
+    .cta-btn{display:inline-block;padding:15px 28px;border-radius:14px;background:var(--gold);color:var(--ink);font-weight:800;font-size:14px;text-decoration:none;letter-spacing:.01em}
+    .cta-btn.secondary{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.7);color:#fff;backdrop-filter:blur(4px)}
 
     .section{padding:44px 20px}
     .section h2{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:600;text-align:center;margin-bottom:8px}
     .section .rule{width:48px;height:1px;background:var(--gold);margin:0 auto 24px}
-    .desc-text{font-size:15px;line-height:1.75;color:var(--muted);text-align:center;max-width:640px;margin:0 auto}
+    .desc-text{font-size:15px;line-height:1.75;color:var(--muted);text-align:center;max-width:680px;margin:0 auto}
+
+    .why-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:28px;max-width:640px;margin-left:auto;margin-right:auto}
+    @media (min-width:700px){.why-grid{grid-template-columns:repeat(4,1fr)}}
+    .why-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:20px 14px;text-align:center}
+    .why-card .ic{font-size:28px;margin-bottom:10px}
+    .why-card .lb{font-size:13px;font-weight:700;color:var(--ink)}
+
+    .services-grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:28px}
+    @media (min-width:700px){.services-grid{grid-template-columns:1fr 1fr}}
+    .service-card{border-radius:18px;overflow:hidden;position:relative;min-height:260px;display:flex;align-items:flex-end}
+    .service-card img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+    .service-card .veil{position:absolute;inset:0;background:linear-gradient(to top,rgba(58,46,38,.82),rgba(58,46,38,.15));z-index:1}
+    .service-card .content{position:relative;z-index:2;padding:22px;color:#fff}
+    .service-card h3{font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:600;margin-bottom:6px}
+    .service-card p{font-size:13px;color:#F0E6D8;line-height:1.5}
 
     .gallery-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}
     @media (min-width:700px){.gallery-grid{grid-template-columns:repeat(3,1fr)}}
@@ -46,6 +66,20 @@
     .testi-text{font-size:13.5px;color:var(--ink);line-height:1.6;font-style:italic}
     .testi-name{font-size:12px;color:var(--muted);font-weight:700;margin-top:12px}
 
+    .reviews-card{background:#fff;border:1px solid var(--border);border-radius:20px;padding:32px 24px;text-align:center;max-width:480px;margin:28px auto 0}
+    .reviews-stars{color:var(--gold);font-size:22px;letter-spacing:2px;margin-bottom:10px}
+    .reviews-card p{font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.6}
+
+    .info-grid{display:grid;grid-template-columns:1fr;gap:20px;margin-top:28px}
+    @media (min-width:700px){.info-grid{grid-template-columns:1fr 1fr}}
+    .info-card{background:#fff;border:1px solid var(--border);border-radius:18px;overflow:hidden}
+    .info-card iframe{width:100%;height:220px;border:0;display:block}
+    .info-card .body{padding:20px}
+    .info-row{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;margin-bottom:12px;color:var(--ink)}
+    .info-row .ic{flex-shrink:0;font-size:16px}
+    .social-row{display:flex;gap:10px;margin-top:16px}
+    .social-btn{flex:1;text-align:center;padding:11px;border-radius:10px;border:1.5px solid var(--border);text-decoration:none;font-size:12.5px;font-weight:700;color:var(--ink)}
+
     .final-cta{background:var(--ink);border-radius:24px;margin:0 20px;padding:44px 24px;text-align:center}
     .final-cta h2{font-family:'Cormorant Garamond',serif;color:var(--cream);font-size:26px;font-weight:600;margin-bottom:10px}
     .final-cta p{color:#C9B8A3;font-size:13px;margin-bottom:20px}
@@ -53,7 +87,6 @@
     .wa-banner-link{display:block;text-align:center;background:#dcfce7;color:#065f46;border-radius:12px;padding:12px 14px;font-size:13px;font-weight:600;text-decoration:none;margin:24px 20px 0}
     .wa-banner-link strong{font-weight:800}
     .footer{text-align:center;padding:28px 20px 10px;font-size:11px;color:#B8A99A}
-    .empty-state{text-align:center;padding:60px 20px;color:var(--muted);font-size:14px}
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -86,15 +119,45 @@ const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdre
 const db=getFirestore(initializeApp(cfg));
 let lang="fr",landing={},settings={};
 
+// ─── Informations réelles et vérifiées (site officiel eventdream.fr + fiche Google) ───
+// Servent de contenu par défaut tant que l'onglet "Site internet" de l'app n'a rien personnalisé
+// (photo de couverture, vidéo, galerie...) — la page reste donc toujours complète et pro, jamais
+// vide, même sans aucune action de ta part.
+const REAL = {
+  address: "98 Rue Jean Jaurès, 94800 Villejuif",
+  hours: "Lundi, mardi, jeudi, vendredi, samedi et dimanche — 10h à 20h (sur RDV)",
+  mapsUrl: "https://www.google.com/maps/place/98+Rue+Jean+Jaur%C3%A8s,+94800+Villejuif/@48.7906993,2.3638936,17z/data=!3m1!4b1!4m6!3m5!1s0x47e673e150ce85b1:0x3c430d564a980bd!8m2!3d48.7906958!4d2.3664685!16s%2Fg%2F11b8vdtj2z",
+  mapsEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2628.538548457047!2d2.36389357684354!3d48.79069930546724!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47e673e150ce85b1%3A0x3c430d564a980bd!2s98%20Rue%20Jean%20Jaur%C3%A8s%2C%2094800%20Villejuif!5e0!3m2!1sfr!2sfr!4v1719927953974!5m2!1sfr!2sfr",
+  instagram: "https://www.instagram.com/eventdream_paris",
+  facebook: "https://www.facebook.com/profile.php?id=61563593643692",
+  heroPhoto: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Service-%C3%A9v%C3%A9nementiel-%C3%A0-Le-Kremlin-Bic%C3%AAtre.jpg",
+  mobilierPhoto: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Location-de-mat%C3%A9riel-%C3%A9v%C3%A9nementiel-pr%C3%A8s-de-Villejuif%C2%A0.jpg",
+  decoPhoto: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Location-de-mat%C3%A9riel-%C3%A9v%C3%A9nementiel-pr%C3%A8s-de-Villejuif3%C2%A0.jpg"
+};
+
 const T={
-fr:{title1:"Créez l'événement",title2:"de vos rêves",sub:"Location de mobilier, vaisselle, décoration et plus encore — pour vos mariages, fêtes et cérémonies.",
-cta:"Demander un devis",gallery:"Notre univers",avis:"Ils nous ont fait confiance",final_title:"Prêt à composer votre devis ?",final_sub:"Choisissez vos articles, vérifiez la disponibilité en direct, et recevez votre devis en quelques minutes.",
-wa:"Une question ? Contactez-nous sur WhatsApp :",empty:"Le contenu de cette page arrive très bientôt.",
-fallback_desc:"EventDream vous accompagne dans l'organisation de vos événements : mariages, henné, anniversaires, cérémonies religieuses. Mobilier élégant, vaisselle raffinée, décoration florale et accessoires personnalisés — tout ce qu'il faut pour sublimer votre réception, livré et installé si vous le souhaitez."},
-en:{title1:"Create the event",title2:"of your dreams",sub:"Furniture, tableware, decoration rental and more — for your weddings, parties and ceremonies.",
-cta:"Request a quote",gallery:"Our world",avis:"They trusted us",final_title:"Ready to build your quote?",final_sub:"Pick your items, check live availability, and get your quote in minutes.",
-wa:"Any question? Contact us on WhatsApp:",empty:"This page's content is coming very soon.",
-fallback_desc:"EventDream helps you plan your events: weddings, henna nights, birthdays, religious ceremonies. Elegant furniture, refined tableware, floral decoration and personalised accessories — everything you need for a beautiful reception, delivered and set up if you wish."}};
+fr:{title1:"Créez l'événement",title2:"de vos rêves",
+cta:"Demander un devis",cta2:"Nous appeler",
+why1:"Disponibilité",why2:"Conseils avisés",why3:"Devis gratuit",why4:"Réponse rapide",
+services:"Nos services",mobilier_t:"Location de matériel",mobilier_d:"Tables, chaises, mange-debout, nappage et kits de vaisselle — pour toutes les configurations de salle.",
+deco_t:"Décoration événementielle",deco_d:"Centres de table, cadeaux d'invités, tableaux de bienvenue personnalisés — chaque détail compte.",
+gallery:"Notre univers",avis:"Ils nous ont fait confiance",
+reviews_title:"Retrouvez nos avis sur Google",reviews_text:"Découvrez les retours de nos clients directement sur notre fiche Google — chaque avis y est vérifié et authentique.",reviews_cta:"Voir nos avis Google",
+infos:"Infos pratiques",horaires:"Horaires",adresse:"Adresse",suivre:"Nous suivre",
+final_title:"Prêt à composer votre devis ?",final_sub:"Choisissez vos articles, vérifiez la disponibilité en direct, et recevez votre devis en quelques minutes.",
+wa:"Une question ? Contactez-nous sur WhatsApp :",
+fallback_desc:"EventDream vous accompagne dans l'organisation de vos événements à Villejuif et dans tout le Val-de-Marne : mariages, henné, anniversaires, baptêmes et cérémonies religieuses. Mobilier élégant, vaisselle raffinée, décoration florale et accessoires personnalisés — tout ce qu'il faut pour transformer chaque occasion en un moment inoubliable, livré et installé si vous le souhaitez."},
+en:{title1:"Create the event",title2:"of your dreams",
+cta:"Request a quote",cta2:"Call us",
+why1:"Availability",why2:"Expert advice",why3:"Free quote",why4:"Fast reply",
+services:"Our services",mobilier_t:"Equipment rental",mobilier_d:"Tables, chairs, cocktail tables, linen and tableware kits — for every room layout.",
+deco_t:"Event decoration",deco_d:"Centrepieces, guest favours, personalised welcome signs — every detail matters.",
+gallery:"Our world",avis:"They trusted us",
+reviews_title:"Find our reviews on Google",reviews_text:"See what our clients say directly on our Google Business listing — every review is verified and genuine.",reviews_cta:"See our Google reviews",
+infos:"Practical info",horaires:"Opening hours",adresse:"Address",suivre:"Follow us",
+final_title:"Ready to build your quote?",final_sub:"Pick your items, check live availability, and get your quote in minutes.",
+wa:"Any question? Contact us on WhatsApp:",
+fallback_desc:"EventDream helps you plan your events in Villejuif and across Val-de-Marne: weddings, henna nights, birthdays, christenings and religious ceremonies. Elegant furniture, refined tableware, floral decoration and personalised accessories — everything you need to make every occasion unforgettable, delivered and set up if you wish."}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";render()};
 
@@ -104,44 +167,70 @@ async function loadData(){
     landing=landingSnap.exists()?(landingSnap.data().value||{}):{};
     settings=settingsSnap.exists()?(settingsSnap.data().value||{}):{};
   }catch(e){
-    // Ne reste JAMAIS bloqué sur le sablier : si la lecture échoue (règles Firestore pas encore
-    // publiées pour ce nouveau document, réseau coupé...), on affiche quand même une page
-    // fonctionnelle avec le contenu de secours ci-dessous, plutôt qu'un écran vide indéfiniment.
-    console.warn("Chargement du contenu de la page d'accueil impossible :",e.message);
+    // Ne reste JAMAIS bloqué sur le sablier : si la lecture échoue (règles Firestore, réseau...),
+    // on affiche quand même une page complète avec les infos réelles ci-dessus en repli.
+    console.warn("Chargement du contenu personnalisé impossible, affichage du contenu par défaut :",e.message);
     landing={};settings={};
   }
   render();
 }
 
 function waBannerHtml(){
-  const tel=(settings.phone||"").replace(/[^0-9+]/g,"");
-  if(!tel)return"";
+  const tel=(settings.phone||"0652360849").replace(/[^0-9+]/g,"");
   const num=tel.replace(/^0/,"33").replace(/^\+/,"");
-  return`<a href="https://wa.me/${num}" target="_blank" rel="noopener" class="wa-banner-link">💬 ${t("wa")} <strong>${settings.phone}</strong></a>`;
+  return`<a href="https://wa.me/${num}" target="_blank" rel="noopener" class="wa-banner-link">💬 ${t("wa")} <strong>${settings.phone||"06 52 36 08 49"}</strong></a>`;
+}
+
+function escapeHtml(s){
+  const d=document.createElement("div");
+  d.textContent=s;
+  return d.innerHTML;
 }
 
 function render(){
   const description=landing.description&&landing.description.trim()?landing.description:t("fallback_desc");
-  const hasCustomContent=landing.heroImage||landing.heroVideo||(landing.gallery&&landing.gallery.length)||(landing.testimonials&&landing.testimonials.length);
+  const phone=settings.phone||"06 52 36 08 49";
+  const phoneHref=phone.replace(/[^0-9+]/g,"");
 
+  // Hero : vidéo si téléversée > photo de couverture personnalisée > photo réelle du site officiel.
   const heroMedia=landing.heroVideo
     ?`<video src="${landing.heroVideo}" autoplay muted loop playsinline></video>`
-    :landing.heroImage
-    ?`<img src="${landing.heroImage}" alt="EventDream"/>`
-    :"";
+    :`<img src="${landing.heroImage||REAL.heroPhoto}" alt="EventDream"/>`;
 
-  const hero=`<div class="hero" style="${heroMedia?"":"aspect-ratio:auto;height:auto;min-height:340px"}">
+  const hero=`<div class="hero">
     ${heroMedia}
-    <div class="hero-overlay" style="${heroMedia?"":"position:static;background:none;padding:48px 24px"}">
-      <div class="hero-title serif" style="${heroMedia?"color:#fff":"color:var(--ink)"}">${t("title1")}<br/>${t("title2")}</div>
-      <div class="hero-sub" style="${heroMedia?"":"color:var(--muted)"}">${escapeHtml(description).split("\n")[0]}</div>
-      <div>
+    <div class="hero-overlay">
+      <div class="hero-title serif">${t("title1")}<br/>${t("title2")}</div>
+      <div class="hero-sub">${escapeHtml(description).split("\n")[0]}</div>
+      <div class="cta-row">
         <a href="/devis.html" class="cta-btn">${landing.ctaText||t("cta")} →</a>
+        <a href="tel:${phoneHref}" class="cta-btn secondary">📞 ${t("cta2")}</a>
       </div>
     </div>
   </div>`;
 
   const descSection=`<div class="section"><div class="desc-text">${escapeHtml(description).replace(/\n/g,"<br/>")}</div></div>`;
+
+  const whySection=`<div class="why-grid">
+    <div class="why-card"><div class="ic">🕐</div><div class="lb">${t("why1")}</div></div>
+    <div class="why-card"><div class="ic">💬</div><div class="lb">${t("why2")}</div></div>
+    <div class="why-card"><div class="ic">📋</div><div class="lb">${t("why3")}</div></div>
+    <div class="why-card"><div class="ic">⚡</div><div class="lb">${t("why4")}</div></div>
+  </div>`;
+
+  const servicesSection=`<div class="section">
+    <h2 class="serif">${t("services")}</h2><div class="rule"></div>
+    <div class="services-grid">
+      <a href="/devis.html" class="service-card" style="text-decoration:none">
+        <img src="${REAL.mobilierPhoto}"/><div class="veil"></div>
+        <div class="content"><h3 class="serif">${t("mobilier_t")}</h3><p>${t("mobilier_d")}</p></div>
+      </a>
+      <a href="/devis.html" class="service-card" style="text-decoration:none">
+        <img src="${REAL.decoPhoto}"/><div class="veil"></div>
+        <div class="content"><h3 class="serif">${t("deco_t")}</h3><p>${t("deco_d")}</p></div>
+      </a>
+    </div>
+  </div>`;
 
   const gallery=(landing.gallery||[]);
   const gallerySection=gallery.length?`<div class="section">
@@ -155,6 +244,33 @@ function render(){
     <div class="testi-grid">${testis.map(tm=>`<div class="testi-card"><div class="testi-stars">${"★".repeat(tm.rating||5)}</div><div class="testi-text">"${escapeHtml(tm.text)}"</div>${tm.name?`<div class="testi-name">— ${escapeHtml(tm.name)}</div>`:""}</div>`).join("")}</div>
   </div>`:"";
 
+  // Avis Google : lien direct vers la fiche officielle (aucun scraping, 100% conforme) — un import
+  // automatique des avis eux-mêmes nécessite une clé API Google Places dédiée, en discussion.
+  const reviewsSection=`<div class="section" style="padding-top:0">
+    <div class="reviews-card">
+      <div class="reviews-stars">★★★★★</div>
+      <h2 class="serif" style="font-size:20px;margin-bottom:10px">${t("reviews_title")}</h2>
+      <p>${t("reviews_text")}</p>
+      <a href="${REAL.mapsUrl}" target="_blank" rel="noopener" class="cta-btn" style="background:var(--ink);color:var(--cream)">${t("reviews_cta")} →</a>
+    </div>
+  </div>`;
+
+  const infoSection=`<div class="section">
+    <h2 class="serif">${t("infos")}</h2><div class="rule"></div>
+    <div class="info-grid">
+      <div class="info-card"><iframe src="${REAL.mapsEmbed}" loading="lazy"></iframe></div>
+      <div class="info-card"><div class="body">
+        <div class="info-row"><span class="ic">📍</span><span>${REAL.address}</span></div>
+        <div class="info-row"><span class="ic">🕐</span><span>${t("horaires")} : ${REAL.hours}</span></div>
+        <div class="info-row"><span class="ic">📞</span><a href="tel:${phoneHref}">${phone}</a></div>
+        <div class="social-row">
+          <a href="${REAL.instagram}" target="_blank" rel="noopener" class="social-btn">📷 Instagram</a>
+          <a href="${REAL.facebook}" target="_blank" rel="noopener" class="social-btn">👍 Facebook</a>
+        </div>
+      </div></div>
+    </div>
+  </div>`;
+
   const finalCta=`<div class="final-cta">
     <h2 class="serif">${t("final_title")}</h2>
     <p>${t("final_sub")}</p>
@@ -164,19 +280,17 @@ function render(){
   document.getElementById("app").innerHTML=`<div class="wrap">
     ${hero}
     ${descSection}
+    ${whySection}
+    ${servicesSection}
     ${gallerySection}
     ${testiSection}
+    ${reviewsSection}
+    ${infoSection}
     ${finalCta}
     ${waBannerHtml()}
     <div class="footer">EventDream — ${new Date().getFullYear()}</div>
   </div>`;
   if(typeof fbq==="function"){fbq('track','PageView');}
-}
-
-function escapeHtml(s){
-  const d=document.createElement("div");
-  d.textContent=s;
-  return d.innerHTML;
 }
 
 loadData();

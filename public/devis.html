@@ -3,85 +3,120 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Demande de devis — EventDream</title>
+  <title>Catalogue & Devis — EventDream</title>
   <style>
-    :root{--navy:#1a1a2e;--blue:#3b82f6;--green:#10b981;--bg:#f6f7f9;--border:#e5e7eb;--text:#1a1a2e;--muted:#6b7280}
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+    :root{
+      --cream:#FBF6EF;--panel:#F3E9DE;--ink:#3A2E26;--muted:#8A7A6D;
+      --gold:#B8935A;--border:#E4D8C8;--green:#10b981;--red:#ef4444;
+    }
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);min-height:100vh;color:var(--text);-webkit-font-smoothing:antialiased}
-    .wrap{max-width:560px;margin:0 auto;padding:16px 16px 60px}
-    .topbar{display:flex;justify-content:flex-end;padding:8px 0}
+    body{font-family:'Inter',-apple-system,sans-serif;background:var(--cream);min-height:100vh;color:var(--ink);-webkit-font-smoothing:antialiased}
+    .serif{font-family:'Cormorant Garamond',serif}
+    .wrap{max-width:560px;margin:0 auto;padding:16px 16px 40px}
+    .topbar{display:flex;justify-content:flex-end;padding:4px 0}
     .lang-btn{background:#fff;border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--muted)}
-    .logo{text-align:center;padding:8px 0 24px}
-    .logo h1{font-size:28px;font-weight:900;color:var(--navy);letter-spacing:-0.5px}
-    .logo p{font-size:13px;color:var(--muted);margin-top:4px}
+    .logo{text-align:center;padding:14px 0 18px}
+    .logo h1{font-size:32px;font-weight:600;color:var(--ink);letter-spacing:.1em}
+    .logo .rule{width:56px;height:1px;background:var(--ink);margin:10px auto}
+    .logo p{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
     .wa-banner-link{display:block;text-align:center;background:#dcfce7;color:#065f46;border-radius:12px;padding:10px 14px;font-size:13px;font-weight:600;text-decoration:none;margin-bottom:16px}
     .wa-banner-link strong{font-weight:800}
-    .step-bar{display:flex;gap:6px;margin-bottom:24px}
-    .step-bar div{flex:1;height:5px;border-radius:5px;background:var(--border);transition:background .3s}
-    .step-bar div.done{background:var(--green)}
-    .step-bar div.active{background:var(--blue)}
-    .card{background:#fff;border-radius:18px;padding:24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(26,26,46,.05)}
-    .card h2{font-size:17px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+    .step-bar{display:flex;gap:6px;margin-bottom:20px}
+    .step-bar div{flex:1;height:4px;border-radius:4px;background:var(--border);transition:background .3s}
+    .step-bar div.done{background:var(--gold)}
+    .step-bar div.active{background:var(--ink)}
+    .card{background:#fff;border-radius:18px;padding:22px;margin-bottom:16px;box-shadow:0 1px 3px rgba(58,46,38,.06)}
+    .card h2{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--ink)}
     label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-    input,select,textarea{width:100%;padding:13px 15px;border-radius:12px;border:1.5px solid var(--border);font-size:16px;font-family:inherit;background:#fff;outline:none;margin-bottom:16px;transition:border .15s;-webkit-appearance:none}
-    input:focus,textarea:focus{border-color:var(--blue)}
+    input,select,textarea{width:100%;padding:13px 15px;border-radius:12px;border:1.5px solid var(--border);font-size:16px;font-family:inherit;background:#fff;outline:none;margin-bottom:16px;transition:border .15s;-webkit-appearance:none;color:var(--ink)}
+    input:focus,textarea:focus{border-color:var(--gold)}
     .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
     .mode-card{padding:16px 12px;border-radius:14px;border:2px solid var(--border);background:#fff;cursor:pointer;text-align:center;transition:all .15s;font-family:inherit}
-    .mode-card.sel{border-color:var(--blue);background:#eff6ff}
+    .mode-card.sel{border-color:var(--gold);background:var(--panel)}
     .mode-card .ic{font-size:26px;margin-bottom:6px}
-    .mode-card .lb{font-size:13px;font-weight:700}
+    .mode-card .lb{font-size:13px;font-weight:700;color:var(--ink)}
     .niveau-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
     .niveau-card{display:flex;align-items:center;gap:12px;padding:16px;border-radius:14px;border:2px solid var(--border);background:#fff;cursor:pointer;transition:all .15s;font-family:inherit;text-align:left;width:100%}
-    .niveau-card.sel{border-color:var(--green);background:#f0fdf4}
+    .niveau-card.sel{border-color:var(--gold);background:var(--panel)}
     .niveau-card .ic{font-size:24px;flex-shrink:0}
     .niveau-card .info{flex:1;min-width:0}
-    .niveau-card .ttl{font-weight:800;font-size:14px}
+    .niveau-card .ttl{font-weight:800;font-size:14px;color:var(--ink)}
     .niveau-card .sub{font-size:12px;color:var(--muted);margin-top:2px}
-    .niveau-card .prix{font-weight:900;font-size:15px;color:var(--green);flex-shrink:0;white-space:nowrap}
     .addr-grid{display:grid;grid-template-columns:110px 1fr;gap:8px}
     .trajet-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
-    .trajet-btn{padding:12px;border-radius:12px;border:2px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center}
-    .trajet-btn.sel{border-color:var(--green);background:#f0fdf4;color:#065f46}
-    .etage-row{display:flex;align-items:center;gap:12px;background:#f8fafc;border-radius:12px;padding:14px;margin-bottom:16px}
-    .etage-row span{font-size:14px;font-weight:600}
+    .trajet-btn{padding:12px;border-radius:12px;border:2px solid var(--border);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;color:var(--ink)}
+    .trajet-btn.sel{border-color:var(--gold);background:var(--panel)}
+    .etage-row{display:flex;align-items:center;gap:12px;background:var(--panel);border-radius:12px;padding:14px;margin-bottom:16px}
+    .etage-row span{font-size:14px;font-weight:600;color:var(--ink)}
     .etage-row input{width:70px;margin:0;text-align:center;font-weight:800}
-    .item-row{display:flex;flex-direction:column;gap:8px;padding:13px;background:#f8fafc;border-radius:12px;margin-bottom:8px}
-    .item-main{display:flex;align-items:center;gap:10px}
-    .item-thumb{width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0}
-    .item-icon{font-size:24px;width:42px;text-align:center;flex-shrink:0;line-height:42px}
-    .item-name{font-weight:700;font-size:14px;overflow-wrap:anywhere}
-    .qty-ctrl{display:flex;align-items:center;gap:5px;flex-shrink:0}
-    .qty-btn{width:32px;height:32px;border-radius:10px;border:none;font-size:17px;font-weight:900;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
-    .qty-btn.plus{background:#dcfce7;color:var(--green)}
-    .qty-btn.minus{background:#fee2e2;color:#ef4444}
-    .qty-input{width:52px;padding:6px 2px;border-radius:10px;border:1.5px solid var(--border);text-align:center;font-size:16px;font-weight:800;font-family:inherit;margin:0}
-    .opt-cb{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:600;background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px 12px;width:100%}
-    /* Case à cocher 100% custom : le rendu natif des checkbox reste invisible/blanc sur certains
-       iPhone même en restaurant l'apparence. On masque l'input et on dessine notre propre case
-       (coche ✓ blanche sur fond vert) — rendu strictement identique sur tous les appareils. */
+    .qty-btn{width:32px;height:32px;border-radius:10px;border:none;font-size:17px;font-weight:900;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:inherit}
+    .qty-btn.plus{background:var(--ink);color:var(--cream)}
+    .qty-btn.minus{background:var(--panel);color:var(--ink)}
+    .qty-btn:disabled{opacity:.35;cursor:not-allowed}
+    .qty-btn.big{width:42px;height:42px;font-size:20px;border-radius:12px}
+    .opt-cb{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted);cursor:pointer;font-weight:600;background:#fff;border:1px solid var(--border);border-radius:10px;padding:9px 12px;width:100%;margin-top:12px}
     .opt-cb input{position:absolute;opacity:0;width:0;height:0;margin:0;padding:0;border:none}
-    .opt-cb .box{width:22px;height:22px;border-radius:7px;border:2px solid #cbd5e1;background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;transition:all .15s}
+    .opt-cb .box{width:22px;height:22px;border-radius:7px;border:2px solid var(--border);background:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#fff;transition:all .15s}
     .opt-cb input:checked+.box{background:var(--green);border-color:var(--green)}
     .opt-cb input:checked+.box::after{content:"✓"}
-    .cat-title{font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
-    .recap-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
+    .recap-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--panel);font-size:14px}
     .recap-row:last-of-type{border-bottom:none}
-    .recap-total{display:flex;justify-content:space-between;padding:12px 0 4px;font-size:17px;font-weight:900}
+    .recap-total{display:flex;justify-content:space-between;padding:12px 0 4px;font-size:19px;font-weight:700;font-family:'Cormorant Garamond',serif}
     .acompte-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-    .acompte-btn{padding:14px 10px;border-radius:12px;border:2px solid var(--border);background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
-    .acompte-btn.sel{border-color:var(--green);background:#f0fdf4;color:#065f46}
-    .submit-btn{width:100%;padding:18px;border-radius:14px;border:none;background:var(--navy);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:.01em}
+    .acompte-btn{padding:14px 10px;border-radius:12px;border:2px solid var(--border);background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--ink)}
+    .acompte-btn.sel{border-color:var(--gold);background:var(--panel)}
+    .submit-btn{width:100%;padding:18px;border-radius:14px;border:none;background:var(--ink);color:var(--cream);font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;letter-spacing:.01em}
     .submit-btn:disabled{opacity:.4;cursor:not-allowed}
     .nav-btns{display:flex;gap:10px;margin-top:18px}
     .back-btn{flex:1;padding:14px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted)}
-    .next-btn{flex:2;padding:14px;border-radius:12px;border:none;background:var(--navy);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
-    .err{color:#ef4444;font-size:13px;margin:8px 0;font-weight:700}
-    .info-box{background:#eff6ff;border-radius:12px;padding:12px 14px;font-size:13px;color:#1d4ed8;font-weight:600;margin-bottom:16px}
+    .next-btn{flex:2;padding:14px;border-radius:12px;border:none;background:var(--ink);color:var(--cream);font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
+    .err{color:var(--red);font-size:13px;margin:8px 0;font-weight:700}
     .success{text-align:center;padding:48px 20px}
     .success .ic{font-size:64px;margin-bottom:16px}
-    .success h2{font-size:22px;font-weight:900;color:var(--green);margin-bottom:10px;justify-content:center}
+    .success h2{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:600;color:var(--ink);margin-bottom:10px;justify-content:center}
     .success p{color:var(--muted);font-size:14px;line-height:1.6;max-width:340px;margin:0 auto}
-    .consult-link{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:12px;background:var(--navy);color:#fff;font-weight:800;font-size:14px;text-decoration:none}
+    .consult-link{display:inline-block;margin-top:20px;padding:13px 24px;border-radius:12px;background:var(--ink);color:var(--cream);font-weight:800;font-size:14px;text-decoration:none}
+
+    /* ── Catalogue ── */
+    .dispo-checking{background:var(--panel);color:var(--muted);font-size:12px;font-weight:600;border-radius:10px;padding:10px 12px;margin-bottom:14px;text-align:center}
+    .cat-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;margin-bottom:2px}
+    .cat-chips::-webkit-scrollbar{display:none}
+    .cat-chip{flex-shrink:0;padding:9px 16px;border-radius:20px;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;border:1px solid var(--border);background:#fff;color:var(--ink)}
+    .cat-chip.sel{border-color:var(--ink);background:var(--ink);color:var(--cream)}
+    .prod-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .prod-card{background:#fff;border:1px solid var(--border);border-radius:16px;overflow:hidden}
+    .prod-photo{width:100%;height:88px;object-fit:cover;display:block;background:linear-gradient(135deg,var(--panel),var(--cream))}
+    .prod-photo-fallback{display:flex;align-items:center;justify-content:center;font-size:30px}
+    .prod-info{padding:9px 10px 0}
+    .prod-name{font-family:'Cormorant Garamond',serif;font-size:15px;font-weight:600;color:var(--ink);line-height:1.2;overflow-wrap:anywhere}
+    .prod-price{font-size:12px;color:var(--gold);font-weight:700;margin-top:2px}
+    .prod-price span{color:#B8A99A;font-weight:500}
+    .prod-qty{display:flex;align-items:center;justify-content:space-between;padding:9px 10px 10px}
+    .qty-val{font-size:14px;font-weight:700;color:var(--ink);min-width:16px;text-align:center}
+    .qty-val.big{font-size:19px;min-width:22px}
+    .dispo-line{font-size:10.5px;color:#9CA3AF;padding:0 10px 9px;font-weight:600}
+    .dispo-line.max{color:#c2410c}
+    .empty-cat{grid-column:1/-1;text-align:center;color:var(--muted);font-size:13px;padding:24px 0}
+
+    .cart-bar{position:fixed;left:16px;right:16px;bottom:16px;max-width:528px;margin:0 auto;z-index:40;background:var(--ink);border-radius:16px;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 8px 24px rgba(58,46,38,.32);cursor:pointer}
+    .cart-dot{position:absolute;top:50%;transform:translateY(-50%);width:11px;height:11px;background:var(--cream);border-radius:50%}
+    .cart-dot.left{left:-5px}.cart-dot.right{right:-5px}
+    .cart-count{font-size:10.5px;color:#C9B8A3;text-transform:uppercase;letter-spacing:.06em}
+    .cart-total{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700;color:var(--cream)}
+    .cart-cta{padding:10px 16px;border-radius:10px;background:var(--gold);color:var(--ink);font-size:13px;font-weight:700}
+
+    .sheet-backdrop{position:fixed;inset:0;background:rgba(58,46,38,.45);display:flex;align-items:flex-end;z-index:50}
+    .sheet{background:var(--cream);width:100%;border-radius:22px 22px 0 0;padding:22px;max-height:88vh;overflow-y:auto}
+    .sheet-handle{width:38px;height:4px;background:var(--border);border-radius:4px;margin:0 auto 16px}
+    .sheet-photo{width:100%;height:150px;border-radius:16px;object-fit:cover;background:linear-gradient(135deg,var(--panel),var(--cream));margin-bottom:16px}
+    .sheet-photo-fallback{display:flex;align-items:center;justify-content:center;font-size:52px}
+    .sheet-name{font-family:'Cormorant Garamond',serif;font-size:23px;font-weight:600;color:var(--ink)}
+    .sheet-rule{width:40px;height:1px;background:var(--gold);margin:8px 0 10px}
+    .sheet-price{font-size:14px;color:var(--gold);font-weight:700;margin-bottom:4px}
+    .sheet-price span{color:#B8A99A;font-weight:500}
+    .sheet-qty{display:flex;align-items:center;justify-content:center;gap:20px;margin:16px 0}
+    .sheet-close-btn{width:100%;padding:15px;border-radius:14px;border:none;background:var(--ink);color:var(--cream);font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:14px}
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -104,9 +139,9 @@
 <body>
 <div class="wrap">
   <div class="topbar"><button class="lang-btn" onclick="toggleLang()">🌐 EN / FR</button></div>
-  <div class="logo"><h1>EventDream</h1><p id="logo-sub">Demande de devis en ligne</p></div>
+  <div class="logo"><h1 class="serif">EVENTDREAM</h1><div class="rule"></div><p id="logo-sub">Composez votre devis</p></div>
   <div id="wa-banner"></div>
-  <div id="app"><div style="text-align:center;padding:60px;color:#94a3b8">⏳</div></div>
+  <div id="app"><div style="text-align:center;padding:60px;color:#B8A99A">⏳</div></div>
 </div>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -118,25 +153,26 @@ const db=getFirestore(fbApp);
 const fns=getFunctions(fbApp,"europe-west9");
 const MAPS_KEY="AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU";
 
+// ─── État ───
+// Ordre du parcours : 1) Date & Livraison  2) Catalogue  3) Coordonnées  4) Récapitulatif.
+// La date est demandée EN PREMIER (avant même le catalogue) car c'est elle qui permet de
+// vérifier la disponibilité réelle des articles pour la période choisie.
 let lang="fr",step=1,stockItems=[],settings={};
+let activeCat="",detailItem=null;
+let availability={},availabilityLoaded=false,availabilityLoading=false;
 let form={
   name:"",phone:"",email:"",
-  // Adresse découpée en 3 champs : sans code postal ni ville, Google résout une rue homonyme
-  // dans une autre ville (ex: "19 rue Léon Blum" → plusieurs centaines de km) et les frais
-  // calculés deviennent aberrants. On n'interroge l'API qu'une fois les 3 champs remplis.
   rue:"",cp:"",ville:"",address:"",
-  mode:"retrait",              // "retrait" | "livraison"
-  niveau:"pied",               // "pied" | "porte" | "installation"
-  etage:"",                    // saisi par le client (min 1 compté en interne)
+  mode:"retrait",niveau:"pied",etage:"",
   trajetAller:true,trajetRetour:true,
   date:"",returnDate:"",
   items:{},options:{},freeText:"",
-  deliveryKm:0,deliveryMin:0,addrStatus:"idle", // idle | checking | ok | error
+  deliveryKm:0,deliveryMin:0,addrStatus:"idle",
   acomptePct:30
 };
 
 const T={
-fr:{sub:"Demande de devis en ligne",s1:"Vos coordonnées",s2:"Date & Livraison",s3:"Votre matériel",s4:"Récapitulatif",
+fr:{sub:"Composez votre devis",s1:"Date & Livraison",s2:"Catalogue",s3:"Vos coordonnées",s4:"Récapitulatif",
 name:"Nom complet",phone:"Téléphone",email:"Email (optionnel)",address:"Adresse de livraison",
 mode_liv:"Livraison",mode_ret:"Retrait entrepôt",
 niv_pied:"Au pied du camion",niv_pied_sub:"Déchargement au niveau du véhicule",
@@ -145,7 +181,7 @@ niv_install:"Livraison + installation",niv_install_sub:"Montage et mise en place
 etage_q:"À quel étage ?",etage_hint:"0 = rez-de-chaussée",
 trajet:"Trajets",aller:"Aller uniquement",allerRetour:"Aller-retour",
 date:"Date de livraison / retrait",retDate:"Date de retour",
-items:"Choisissez vos articles",washing:"Option lavage",
+washing:"Option lavage",
 calcul:"Calcul en cours...",addr_err:"Adresse non reconnue — les frais seront confirmés par nos soins.",
 recap:"Récapitulatif",livraison:"Livraison",total:"Total",
 acompte:"Acompte à payer",p30:"30% — réservation",p100:"100% — paiement complet",
@@ -162,8 +198,13 @@ rue:"Numéro et rue",cp:"Code postal",ville:"Ville",
 addr_incomplete:"Complétez le code postal et la ville pour calculer les frais",
 cp_err:"Code postal invalide (5 chiffres attendus)",
 hors_zone:"Adresse hors de notre zone de livraison — nous vous recontactons pour un devis personnalisé.",
-frais_apres:"Frais de livraison confirmés par nos soins"},
-en:{sub:"Online Quote Request",s1:"Your details",s2:"Date & Delivery",s3:"Your equipment",s4:"Summary",
+frais_apres:"Frais de livraison confirmés par nos soins",
+verif_dispo:"Vérification de la disponibilité pour vos dates...",
+empty_cat:"Aucun article dans cette catégorie.",
+continuer:"Continuer",continue_shopping:"Continuer mes achats",
+select_item_err:"Veuillez sélectionner au moins un article.",
+dispo_indispo:"Indisponible pour ces dates",dispo_max:"Maximum atteint : ",dispo_ok:" disponible"},
+en:{sub:"Build your quote",s1:"Date & Delivery",s2:"Catalogue",s3:"Your details",s4:"Summary",
 name:"Full name",phone:"Phone",email:"Email (optional)",address:"Delivery address",
 mode_liv:"Delivery",mode_ret:"Warehouse pickup",
 niv_pied:"At the truck",niv_pied_sub:"Unloading at vehicle level",
@@ -172,7 +213,7 @@ niv_install:"Delivery + setup",niv_install_sub:"Assembly and installation includ
 etage_q:"Which floor?",etage_hint:"0 = ground floor",
 trajet:"Trips",aller:"One way",allerRetour:"Round trip",
 date:"Delivery / pickup date",retDate:"Return date",
-items:"Choose your items",washing:"Washing option",
+washing:"Washing option",
 calcul:"Calculating...",addr_err:"Address not recognized — fees will be confirmed by our team.",
 recap:"Summary",livraison:"Delivery",total:"Total",
 acompte:"Deposit to pay",p30:"30% — reservation",p100:"100% — full payment",
@@ -189,7 +230,12 @@ rue:"Street number and name",cp:"Postal code",ville:"City",
 addr_incomplete:"Enter postal code and city to calculate delivery fees",
 cp_err:"Invalid postal code (5 digits expected)",
 hors_zone:"Address outside our delivery area — we will contact you with a custom quote.",
-frais_apres:"Delivery fees confirmed by our team"}};
+frais_apres:"Delivery fees confirmed by our team",
+verif_dispo:"Checking availability for your dates...",
+empty_cat:"No items in this category.",
+continuer:"Continue",continue_shopping:"Keep browsing",
+select_item_err:"Please select at least one item.",
+dispo_indispo:"Unavailable for these dates",dispo_max:"Maximum reached: ",dispo_ok:" available"}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");renderWaBanner();render()};
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
@@ -200,14 +246,13 @@ async function loadData(){
   const[stockSnap,settingsSnap]=await Promise.all([getDocs(collection(db,"stock")),getDoc(doc(db,"app","settings"))]);
   stockItems=stockSnap.docs.map(d=>({...d.data(),id:d.id})).filter(s=>s.name&&(s.price||0)>0);
   settings=settingsSnap.exists()?(settingsSnap.data().value||settingsSnap.data()||{}):{};
+  activeCat=[...new Set(stockItems.map(s=>s.category).filter(Boolean))].sort()[0]||"";
   renderWaBanner();
   render();
 }
 
 // Bandeau "Nous contacter sur WhatsApp" : affiché en permanence au-dessus du formulaire, sur les
-// 4 étapes (contrairement au reste du contenu, ce bloc n'est jamais régénéré par render(), donc
-// il reste visible tout du long) — pour qu'un client pressé ou hésitant puisse joindre l'équipe
-// directement plutôt que de remplir le formulaire.
+// 4 étapes — pour qu'un client pressé ou hésitant puisse joindre l'équipe directement.
 function renderWaBanner(){
   const el=document.getElementById("wa-banner");
   if(!el)return;
@@ -244,15 +289,15 @@ function calcTrajetUnit(){
   const seuilMin=s.seuilMin!=null?s.seuilMin:0;
   return forfait+Math.max(0,km-seuilKm)*(s.pricePerKm||0)+Math.max(0,min-seuilMin)*(s.pricePerMin||0);
 }
-function calcBase(){ // livraison distance selon trajets
+function calcBase(){
   const u=calcTrajetUnit();
   return(form.trajetAller?u:0)+(form.trajetRetour?u:0);
 }
-function effEtages(){ // étage saisi, min 1 en interne
+function effEtages(){
   const e=parseInt(form.etage);
   return isNaN(e)||e<1?1:e;
 }
-function calcEtage(){ // barème étage × nb étages effectif
+function calcEtage(){
   const baremes=settings.deliveryEtageBaremes||{};
   const parEtage=Object.entries(form.items).filter(([,q])=>q>0).reduce((s,[id,qty])=>{
     const cfg=baremes[id];
@@ -269,7 +314,7 @@ function calcInstall(){
     return s+(parseFloat(cfg.unitPrice)||0)*qty;
   },0);
 }
-function calcDelivery(){ // prix total livraison selon niveau choisi
+function calcDelivery(){
   if(form.mode!=="livraison")return 0;
   const base=calcBase();
   if(form.niveau==="pied")return base;
@@ -291,12 +336,11 @@ function calcSubtotal(){
   },0);
 }
 function calcTotal(){return calcSubtotal()+calcDelivery()}
+function cartCount(){return Object.values(form.items).reduce((s,q)=>s+(q>0?q:0),0)}
 
-// Distance maximale considérée comme une livraison normale. Au-delà, on n'annonce aucun prix
-// (filet de sécurité contre une faute de frappe sur le code postal ou un client hors zone).
+// Distance maximale considérée comme une livraison normale.
 const MAX_KM=100;
 
-// Adresse complète reconstituée à partir des 3 champs — utilisée pour l'API et pour Firestore.
 function fullAddress(){
   const rue=(form.rue||"").trim(),cp=(form.cp||"").trim(),ville=(form.ville||"").trim();
   if(!rue||!cp||!ville)return"";
@@ -308,22 +352,13 @@ const adresseComplete=()=>!!(form.rue||"").trim()&&cpValide()&&!!(form.ville||""
 let debounceTimer=null;
 let cpLookupTimer=null,cpLookupToken=0;
 let villeLookupTimer=null,villeLookupToken=0;
-// Jeton incrémenté à chaque nouvelle saisie : permet d'ignorer une réponse API qui reviendrait
-// après qu'une saisie plus récente ait déjà lancé sa propre vérification (sinon une réponse
-// "en retard" peut écraser un statut plus à jour et afficher un message erroné).
 let addrReqToken=0;
 
-// Appelé à chaque frappe sur l'un des 3 champs. Le calcul de distance n'est JAMAIS lancé tant
-// que rue + code postal (5 chiffres) + ville ne sont pas tous renseignés : c'est ce qui évite
-// que Google résolve une rue homonyme dans une autre ville et renvoie des frais aberrants.
 window.onAddrField=(champ,val)=>{
   form[champ]=val;
   form.address=fullAddress();
   clearTimeout(debounceTimer);
   const myToken=++addrReqToken;
-  // Recherche auto CP → Ville / Ville → CP (API officielle geo.api.gouv.fr, gratuite, sans clé).
-  // Ne remplit jamais un champ déjà renseigné — seulement l'autre, s'il est encore vide — pour ne
-  // jamais risquer d'écraser ce que le client est en train de taper.
   if(champ==="cp"){
     clearTimeout(cpLookupTimer);
     if(/^\d{5}$/.test(val)&&!form.ville){
@@ -339,7 +374,7 @@ window.onAddrField=(champ,val)=>{
             if(villeInput)villeInput.value=form.ville;
             onAddrField("ville",form.ville);
           }
-        }catch(e){/* API indisponible : le champ reste à compléter à la main */}
+        }catch(e){}
       },500);
     }
   }
@@ -354,14 +389,13 @@ window.onAddrField=(champ,val)=>{
           const data=await r.json();
           if(myVilleToken!==villeLookupToken)return;
           const codes=data&&data[0]&&data[0].codesPostaux;
-          // N'auto-remplit que si un seul code postal correspond (sinon ambigu, ex: Paris).
           if(Array.isArray(codes)&&codes.length===1&&!form.cp&&form.ville===villeVal){
             form.cp=codes[0];
             const cpInput=document.getElementById("f-cp");
             if(cpInput)cpInput.value=form.cp;
             onAddrField("cp",form.cp);
           }
-        }catch(e){/* API indisponible : le champ reste à compléter à la main */}
+        }catch(e){}
       },500);
     }
   }
@@ -374,7 +408,7 @@ window.onAddrField=(champ,val)=>{
   updateAddrStatusDom();
   debounceTimer=setTimeout(async()=>{
     const res=await computeDistance(settings.warehouseAddress||"",form.address);
-    if(myToken!==addrReqToken)return; // réponse obsolète : une saisie plus récente a pris le relais
+    if(myToken!==addrReqToken)return;
     if(res&&res.km>MAX_KM){form.deliveryKm=0;form.deliveryMin=0;form.addrStatus="horszone";}
     else if(res){form.deliveryKm=res.km;form.deliveryMin=res.min;form.addrStatus="ok";}
     else{form.deliveryKm=0;form.deliveryMin=0;form.addrStatus="error";}
@@ -382,13 +416,11 @@ window.onAddrField=(champ,val)=>{
   },900);
 };
 
-// Statut sous les champs adresse (couleur + texte) selon form.addrStatus. Appelé aussi en dehors
-// de render() (frappe en cours) pour donner un retour immédiat sans reconstruire toute l'étape.
 function addrStatusLabel(){
   if(form.addrStatus==="checking")return{text:"📍 "+t("calcul"),color:"#94a3b8"};
-  if(form.addrStatus==="ok")return{text:`✅ ${form.ville.trim()} — ${t("recap")==="Récapitulatif"?"adresse validée":"address validated"}`,color:"#10b981"};
-  if(form.addrStatus==="horszone")return{text:"📍 "+t("hors_zone"),color:"#f59e0b"};
-  if(form.addrStatus==="error")return{text:"⚠️ "+t("addr_err"),color:"#f59e0b"};
+  if(form.addrStatus==="ok")return{text:`✅ ${form.ville.trim()} — ${t("s4")==="Récapitulatif"?"adresse validée":"address validated"}`,color:"#10b981"};
+  if(form.addrStatus==="horszone")return{text:"📍 "+t("hors_zone"),color:"#B8935A"};
+  if(form.addrStatus==="error")return{text:"⚠️ "+t("addr_err"),color:"#B8935A"};
   if(form.addrStatus==="incomplete")return{text:"✍️ "+t("addr_incomplete"),color:"#94a3b8"};
   return{text:"",color:"#94a3b8"};
 }
@@ -399,30 +431,88 @@ function updateAddrStatusDom(){
   el.textContent=text;el.style.color=color;
 }
 
+// ─── Disponibilité (catalogue) ───
+// Interroge une Cloud Function dédiée qui ne renvoie QUE des quantités agrégées par article —
+// jamais de données clients — pour ne pas exposer publiquement le contenu des commandes en
+// cours. Le calcul (commandes actives qui chevauchent la période choisie) est fait côté serveur.
+async function fetchAvailability(){
+  availabilityLoading=true;render();
+  try{
+    const res=await httpsCallable(fns,"getStockAvailability")({start:form.date,end:form.returnDate||form.date});
+    availability=(res.data&&res.data.availability)||{};
+    availabilityLoaded=true;
+    Object.keys(form.items).forEach(id=>{
+      const max=availability[id];
+      if(max!=null&&form.items[id]>max)form.items[id]=max;
+    });
+  }catch(e){
+    console.warn("Vérification de disponibilité indisponible :",e.message);
+    availabilityLoaded=false;
+  }
+  availabilityLoading=false;
+  render();
+}
+function maxQtyFor(id){
+  if(!availabilityLoaded)return Infinity;
+  const a=availability[id];
+  return a==null?Infinity:a;
+}
+function dispoLineHtml(id,qty){
+  const max=maxQtyFor(id);
+  if(!availabilityLoaded||max===Infinity)return"";
+  if(max<=0)return`<div class="dispo-line max">${t("dispo_indispo")}</div>`;
+  if(qty>=max)return`<div class="dispo-line max">${t("dispo_max")}${max}</div>`;
+  return`<div class="dispo-line">${max}${t("dispo_ok")}${max>1?"s":""}</div>`;
+}
+
+function setQtyClamped(id,qty){
+  const max=maxQtyFor(id);
+  const clamped=Math.max(0,max===Infinity?qty:Math.min(qty,max));
+  form.items[id]=clamped;
+  render();
+}
+window.incQty=id=>setQtyClamped(id,(form.items[id]||0)+1);
+window.decQty=id=>setQtyClamped(id,(form.items[id]||0)-1);
+window.setQty=setQtyClamped;
+window.openDetail=id=>{detailItem=id;render();};
+window.closeDetail=()=>{detailItem=null;render();};
+window.selectCat=c=>{activeCat=c;render();};
+window.toggleOpt=(k,v)=>{form.options[k]=v;render()};
+
+function renderDetailSheet(id){
+  const item=stockItems.find(s=>s.id===id);
+  if(!item)return"";
+  const qty=form.items[id]||0;
+  const max=maxQtyFor(id);
+  const washPrice=parseFloat(item.cleaningPrice)||0;
+  const thumb=item.imageUrl?`<img src="${item.imageUrl}" class="sheet-photo"/>`:`<div class="sheet-photo sheet-photo-fallback">${item.icon||"📦"}</div>`;
+  return`<div class="sheet-backdrop" onclick="closeDetail()">
+    <div class="sheet" onclick="event.stopPropagation()">
+      <div class="sheet-handle"></div>
+      ${thumb}
+      <div class="sheet-name serif">${item.name}</div>
+      <div class="sheet-rule"></div>
+      <div class="sheet-price">${item.price.toFixed(2)} € <span>/ ${item.unit||"unité"}</span></div>
+      ${dispoLineHtml(id,qty)}
+      <div class="sheet-qty">
+        <button class="qty-btn minus big" onclick="decQty('${id}')" ${qty<=0?"disabled":""}>−</button>
+        <span class="qty-val big">${qty}</span>
+        <button class="qty-btn plus big" onclick="incQty('${id}')" ${max!==Infinity&&qty>=max?"disabled":""}>+</button>
+      </div>
+      ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[id+"_washing"]?"checked":""} onchange="toggleOpt('${id}_washing',this.checked)"/><span class="box"></span>🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
+      <button class="sheet-close-btn" onclick="closeDetail()">${t("continue_shopping")}</button>
+    </div>
+  </div>`;
+}
+
 function render(){
   const steps=[t("s1"),t("s2"),t("s3"),t("s4")];
   const bar=`<div class="step-bar">${steps.map((_,i)=>`<div class="${i<step-1?"done":i===step-1?"active":""}"></div>`).join("")}</div>`;
 
-  // ── ÉTAPE 1 ──
+  // ── ÉTAPE 1 : Date & Livraison ──
   if(step===1){
     document.getElementById("app").innerHTML=`${bar}
-    <div class="card"><h2>👤 ${t("s1")}</h2>
-      <label>${t("name")} *</label><input id="f-name" value="${form.name}" placeholder="Prénom Nom" autocomplete="name"/>
-      <label>${t("phone")} *</label><input id="f-phone" type="tel" value="${form.phone}" placeholder="+33 6 XX XX XX XX" autocomplete="tel"/>
-      <label>${t("email")}</label><input id="f-email" type="email" value="${form.email}" placeholder="email@exemple.com" autocomplete="email"/>
-      <div id="err1" class="err" style="display:none"></div>
-      <button class="next-btn" style="width:100%" onclick="goStep1()">${t("next")} →</button>
-    </div>`;
-  }
-
-  // ── ÉTAPE 2 ──
-  else if(step===2){
-    const hasAddr=form.addrStatus==="ok";
-    // Les prix des niveaux ne sont PAS affichés ici : les surcoûts étage/installation dépendent
-    // des articles (pas encore choisis à cette étape) — un prix identique sur les 3 niveaux
-    // serait trompeur. Le prix final s'affiche au récapitulatif (étape 4).
-    document.getElementById("app").innerHTML=`${bar}
-    <div class="card"><h2>📅 ${t("s2")}</h2>
+    <div class="card"><h2>📅 ${t("s1")}</h2>
       <label>${t("date")} *</label>
       <input id="f-date" type="date" value="${form.date}" min="${TODAY}" onchange="onDateChange(this.value)"/>
       <label>${t("retDate")}</label>
@@ -454,17 +544,14 @@ function render(){
           <button class="niveau-card${form.niveau==="pied"?" sel":""}" onclick="setNiveau('pied')">
             <div class="ic">🚚</div>
             <div class="info"><div class="ttl">${t("niv_pied")}</div><div class="sub">${t("niv_pied_sub")}</div></div>
-            
           </button>
           <button class="niveau-card${form.niveau==="porte"?" sel":""}" onclick="setNiveau('porte')">
             <div class="ic">🚪</div>
             <div class="info"><div class="ttl">${t("niv_porte")}</div><div class="sub">${t("niv_porte_sub")}</div></div>
-            
           </button>
           <button class="niveau-card${form.niveau==="installation"?" sel":""}" onclick="setNiveau('installation')">
             <div class="ic">🛠️</div>
             <div class="info"><div class="ttl">${t("niv_install")}</div><div class="sub">${t("niv_install_sub")}</div></div>
-            
           </button>
         </div>
 
@@ -475,48 +562,78 @@ function render(){
           <span style="font-size:11px;color:var(--muted)">${t("etage_hint")}</span>
         </div>`:""}
       `:""}
-      <div id="err2" class="err" style="display:none"></div>
-      <div class="nav-btns"><button class="back-btn" onclick="goBackTo(1)">← ${t("back")}</button><button class="next-btn" onclick="goStep2()">${t("next")} →</button></div>
+      <div id="err1" class="err" style="display:none"></div>
+      <div class="nav-btns"><button class="next-btn" style="flex:1" onclick="goStepCatalogue()">${t("next")} →</button></div>
     </div>`;
   }
 
-  // ── ÉTAPE 3 ──
-  else if(step===3){
+  // ── ÉTAPE 2 : Catalogue ──
+  else if(step===2){
     const cats=[...new Set(stockItems.map(s=>s.category).filter(Boolean))].sort();
-    let html=`${bar}<div class="card"><h2>📦 ${t("s3")}</h2>`;
-    cats.forEach(cat=>{
-      html+=`<div class="cat-title">${cat}</div>`;
-      stockItems.filter(s=>s.category===cat).forEach(item=>{
-        const qty=form.items[item.id]||0;
-        const thumb=item.imageUrl?`<img src="${item.imageUrl}" class="item-thumb"/>`:`<div class="item-icon">${item.icon||"📦"}</div>`;
-        const washPrice=parseFloat(item.cleaningPrice)||0;
-        html+=`<div class="item-row">
-          <div class="item-main">
-            ${thumb}
-            <div style="flex:1;min-width:0"><div class="item-name">${item.name}</div></div>
-            <div class="qty-ctrl">
-              <button class="qty-btn minus" onclick="setQty('${item.id}',${Math.max(0,qty-1)})">−</button>
-              <input class="qty-input" type="number" inputmode="numeric" value="${qty}" min="0" onchange="setQty('${item.id}',parseInt(this.value)||0)"/>
-              <button class="qty-btn plus" onclick="setQty('${item.id}',${qty+1})">+</button>
-            </div>
+    if(!activeCat||!cats.includes(activeCat))activeCat=cats[0]||"";
+    const itemsInCat=stockItems.filter(s=>s.category===activeCat);
+    const count=cartCount(),subtotal=calcSubtotal();
+
+    const chips=cats.map(c=>`<button class="cat-chip${c===activeCat?" sel":""}" onclick="selectCat('${c.replace(/'/g,"\\'")}')">${c}</button>`).join("");
+
+    const cards=itemsInCat.map(item=>{
+      const qty=form.items[item.id]||0;
+      const max=maxQtyFor(item.id);
+      const thumb=item.imageUrl?`<img src="${item.imageUrl}" class="prod-photo"/>`:`<div class="prod-photo prod-photo-fallback">${item.icon||"📦"}</div>`;
+      return`<div class="prod-card">
+        <div onclick="openDetail('${item.id}')" style="cursor:pointer">
+          ${thumb}
+          <div class="prod-info">
+            <div class="prod-name">${item.name}</div>
+            <div class="prod-price">${item.price.toFixed(2)} € <span>/ ${item.unit||"unité"}</span></div>
           </div>
-          ${qty>0&&washPrice>0?`<label class="opt-cb"><input type="checkbox" ${form.options[item.id+"_washing"]?"checked":""} onchange="toggleOpt('${item.id}_washing',this.checked)"/><span class="box"></span>🧺 ${t("washing")} +${washPrice.toFixed(2)} €/u</label>`:""}
-        </div>`;
-      });
-    });
-    html+=`<div style="margin-top:16px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" style="resize:vertical">${form.freeText||""}</textarea></div>`;
-    html+=`<div class="nav-btns"><button class="back-btn" onclick="goBackTo(2)">← ${t("back")}</button><button class="next-btn" onclick="goStep3()">${t("next")} →</button></div></div>`;
-    document.getElementById("app").innerHTML=html;
+        </div>
+        <div class="prod-qty">
+          <button class="qty-btn minus" onclick="decQty('${item.id}')" ${qty<=0?"disabled":""}>−</button>
+          <span class="qty-val">${qty}</span>
+          <button class="qty-btn plus" onclick="incQty('${item.id}')" ${max!==Infinity&&qty>=max?"disabled":""}>+</button>
+        </div>
+        ${dispoLineHtml(item.id,qty)}
+      </div>`;
+    }).join("");
+
+    document.getElementById("app").innerHTML=`${bar}
+    <div class="card" style="${count>0?"padding-bottom:26px":""}">
+      <h2>🛍️ ${t("s2")}</h2>
+      ${availabilityLoading?`<div class="dispo-checking">⏳ ${t("verif_dispo")}</div>`:""}
+      <div class="cat-chips">${chips}</div>
+      <div class="prod-grid">${cards||`<div class="empty-cat">${t("empty_cat")}</div>`}</div>
+      <div style="margin-top:18px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" onblur="saveFree()">${form.freeText||""}</textarea></div>
+      <div id="err2" class="err" style="display:none"></div>
+      <div class="nav-btns"><button class="back-btn" onclick="goBackTo(1)">← ${t("back")}</button><button class="next-btn" onclick="goStepCoordonnees()">${t("next")} →</button></div>
+    </div>
+    ${count>0?`<div class="cart-bar" onclick="goStepCoordonnees()">
+      <div class="cart-dot left"></div><div class="cart-dot right"></div>
+      <div><div class="cart-count">${count} article${count>1?"s":""}</div><div class="cart-total">${subtotal.toFixed(2)} €</div></div>
+      <div class="cart-cta">${t("continuer")} →</div>
+    </div>`:""}
+    ${detailItem?renderDetailSheet(detailItem):""}`;
   }
 
-  // ── ÉTAPE 4 ──
+  // ── ÉTAPE 3 : Coordonnées ──
+  else if(step===3){
+    document.getElementById("app").innerHTML=`${bar}
+    <div class="card"><h2>👤 ${t("s3")}</h2>
+      <label>${t("name")} *</label><input id="f-name" value="${form.name}" placeholder="Prénom Nom" autocomplete="name"/>
+      <label>${t("phone")} *</label><input id="f-phone" type="tel" value="${form.phone}" placeholder="06 XX XX XX XX" autocomplete="tel"/>
+      <label>${t("email")}</label><input id="f-email" type="email" value="${form.email}" placeholder="email@exemple.com" autocomplete="email"/>
+      <div id="err3" class="err" style="display:none"></div>
+      <div class="nav-btns"><button class="back-btn" onclick="goBackTo(2)">← ${t("back")}</button><button class="next-btn" onclick="goStepRecap()">${t("next")} →</button></div>
+    </div>`;
+  }
+
+  // ── ÉTAPE 4 : Récapitulatif ──
   else if(step===4){
     const total=calcTotal();
     const del=calcDelivery();
-    const acompte=(total*form.acomptePct/100).toFixed(2);
     const selItems=Object.entries(form.items).filter(([,q])=>q>0);
     document.getElementById("app").innerHTML=`${bar}
-    <div class="card"><h2>📋 ${t("recap")}</h2>
+    <div class="card"><h2 class="serif">📋 ${t("recap")}</h2>
       <div style="margin-bottom:8px;font-size:15px"><strong>${form.name}</strong></div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:2px">${form.phone}${form.email?` · ${form.email}`:""}</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:2px">📅 ${fmtD(form.date)}${form.returnDate?" → "+fmtD(form.returnDate):""}</div>
@@ -528,11 +645,11 @@ function render(){
         const tot=((parseFloat(it.price)||0)*qty)+wash;
         return`<div class="recap-row"><span>${it.icon||"📦"} ${it.name} ×${qty}${wash>0?" <span style='font-size:11px;color:#0891b2'>+ lavage</span>":""}</span><span style="font-weight:700">${tot.toFixed(2)} €</span></div>`;
       }).join("")}
-      ${del>0?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:(form.mode==="livraison"&&form.addrStatus!=="ok"?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700;font-size:12px;color:#f59e0b">${t("frais_apres")}</span></div>`:"")}
+      ${del>0?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:(form.mode==="livraison"&&form.addrStatus!=="ok"?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700;font-size:12px;color:#B8935A">${t("frais_apres")}</span></div>`:"")}
       <div class="recap-total"><span>${t("total")}</span><span>${total.toFixed(2)} €</span></div>
-      ${form.freeText?`<div style="background:#fffbeb;border-radius:10px;padding:12px;font-size:13px;margin-top:10px">📝 ${form.freeText}</div>`:""}
+      ${form.freeText?`<div style="background:var(--panel);border-radius:10px;padding:12px;font-size:13px;margin-top:10px">📝 ${form.freeText}</div>`:""}
     </div>
-    <div class="card"><h2>💰 ${t("acompte")}</h2>
+    <div class="card"><h2 class="serif">💰 ${t("acompte")}</h2>
       <div class="acompte-row">
         <button class="acompte-btn${form.acomptePct===30?" sel":""}" onclick="setPct(30)">30%<br><span style="font-size:17px;font-weight:900">${(total*.3).toFixed(2)} €</span></button>
         <button class="acompte-btn${form.acomptePct===100?" sel":""}" onclick="setPct(100)">100%<br><span style="font-size:17px;font-weight:900">${total.toFixed(2)} €</span></button>
@@ -548,12 +665,10 @@ function render(){
 // ── Handlers ──
 window.onDateChange=v=>{
   form.date=v;
-  // Si retour antérieur à la nouvelle date, proposer le lendemain
   if(form.returnDate&&form.returnDate<=v)form.returnDate=nextDay(v);
   render();
 };
 window.setMode=m=>{
-  // Sauvegarder les dates avant re-render pour ne pas les perdre
   form.date=document.getElementById("f-date")?.value||form.date;
   form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
   form.mode=m;
@@ -569,83 +684,72 @@ window.setNiveau=n=>{
   form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
   form.niveau=n;render();
 };
-window.setQty=(id,qty)=>{form.items[id]=Math.max(0,qty);render()};
-window.toggleOpt=(k,v)=>{form.options[k]=v;render()};
 window.setPct=p=>{form.acomptePct=p;render()};
 window.saveFree=()=>{form.freeText=document.getElementById("f-free")?.value||form.freeText};
+window.onRetDateChange=v=>{form.returnDate=v};
+window.onEtageChange=v=>{form.etage=v;render()};
 
-// ⚠️ Les handlers inline (onclick="...") s'exécutent dans le scope GLOBAL : ils ne voient pas
-// les variables du module (step, form, render). Tout handler inline doit donc passer par une
-// fonction exposée sur window — sinon il échoue silencieusement (cause du bug "bouton Retour
-// inopérant" et "étage jamais pris en compte").
-// Relit les 3 champs adresse depuis le DOM et reconstitue l'adresse complète.
 function readAddrFields(){
   form.rue=document.getElementById("f-rue")?.value??form.rue;
   form.cp=document.getElementById("f-cp")?.value??form.cp;
   form.ville=document.getElementById("f-ville")?.value??form.ville;
   form.address=fullAddress();
 }
+
 window.goBackTo=n=>{
-  // Sauvegarde les champs de l'étape courante avant de revenir en arrière
-  if(step===2){
-    form.date=document.getElementById("f-date")?.value||form.date;
-    form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
-    if(form.mode==="livraison")readAddrFields();
-  }
-  if(step===3)saveFree();
+  if(step===2)saveFree();
   step=n;render();
 };
-window.onRetDateChange=v=>{form.returnDate=v};
-window.onEtageChange=v=>{form.etage=v;render()};
 
-window.goStep1=()=>{
-  form.name=document.getElementById("f-name")?.value||"";
-  form.phone=document.getElementById("f-phone")?.value||"";
-  form.email=document.getElementById("f-email")?.value||"";
-  const err=document.getElementById("err1");
-  if(!form.name.trim()||!form.phone.trim()){err.textContent=t("req");err.style.display="block";return;}
-  // Format téléphone français : 10 chiffres commençant par 0, ou +33/0033 suivi de 9 chiffres.
-  // Espaces, points et tirets tolérés dans la saisie (ex: "06 50 12 34 56").
-  const phoneDigits=form.phone.trim().replace(/[\s.\-]/g,"");
-  const phoneValide=/^0[1-9]\d{8}$/.test(phoneDigits)||/^(\+33|0033)[1-9]\d{8}$/.test(phoneDigits);
-  if(!phoneValide){err.textContent=t("phone_err");err.style.display="block";return;}
-  // L'email reste facultatif (le téléphone suffit à recevoir le devis par WhatsApp/SMS), mais
-  // s'il est saisi, on vérifie un format minimal — sinon un email mal tapé (ex: sans "@") passe
-  // silencieusement et l'envoi automatique du lien de consultation échoue sans que personne ne
-  // s'en rende compte.
-  if(form.email.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())){
-    err.textContent=t("email_err");err.style.display="block";return;
-  }
-  step=2;render();
-};
-window.goStep2=()=>{
+// Étape 1 → 2 : valide la date/adresse, puis lance la vérification de disponibilité pour ces dates.
+window.goStepCatalogue=()=>{
   form.date=document.getElementById("f-date")?.value||form.date;
   form.returnDate=document.getElementById("f-retdate")?.value||form.returnDate;
   if(form.mode==="livraison")readAddrFields();
-  const err=document.getElementById("err2");
+  const err=document.getElementById("err1");
   if(!form.date){err.textContent=t("req");err.style.display="block";return;}
   if(form.mode==="livraison"){
-    // Les 3 champs sont obligatoires : sans code postal ni ville, la distance (et donc les frais)
-    // ne peut pas être calculée de façon fiable.
     if(!form.rue.trim()||!form.ville.trim()){err.textContent=t("req");err.style.display="block";return;}
     if(!cpValide()){err.textContent=t("cp_err");err.style.display="block";return;}
   }
-  // Garde-fou JS explicite : certains navigateurs (iOS Safari notamment) n'empêchent pas
-  // toujours la sélection d'une date antérieure malgré l'attribut "min" du champ HTML.
   if(form.returnDate&&form.returnDate<=form.date){
-    // Corrige automatiquement au lendemain de la date de livraison pour débloquer le client
     form.returnDate=nextDay(form.date);
     render();
-    const err2=document.getElementById("err2");
-    if(err2){err2.textContent=t("ret_err");err2.style.display="block";}
+    const errAfter=document.getElementById("err1");
+    if(errAfter){errAfter.textContent=t("ret_err");errAfter.style.display="block";}
+    return;
+  }
+  step=2;
+  availabilityLoaded=false;availability={};
+  render();
+  fetchAvailability();
+};
+
+// Étape 2 → 3 : au moins un article (ou une demande spéciale) doit être renseigné.
+window.goStepCoordonnees=()=>{
+  saveFree();
+  const hasItems=cartCount()>0||form.freeText.trim();
+  if(!hasItems){
+    const err=document.getElementById("err2");
+    if(err){err.textContent=t("select_item_err");err.style.display="block";}
     return;
   }
   step=3;render();
 };
-window.goStep3=()=>{
-  saveFree();
-  const hasItems=Object.values(form.items).some(q=>q>0)||form.freeText.trim();
-  if(!hasItems){alert(lang==="fr"?"Veuillez sélectionner au moins un article.":"Please select at least one item.");return;}
+
+// Étape 3 → 4 : coordonnées obligatoires + formats vérifiés.
+window.goStepRecap=()=>{
+  form.name=document.getElementById("f-name")?.value||"";
+  form.phone=document.getElementById("f-phone")?.value||"";
+  form.email=document.getElementById("f-email")?.value||"";
+  const err=document.getElementById("err3");
+  if(!form.name.trim()||!form.phone.trim()){err.textContent=t("req");err.style.display="block";return;}
+  const phoneDigits=form.phone.trim().replace(/[\s.\-]/g,"");
+  const phoneValide=/^0[1-9]\d{8}$/.test(phoneDigits)||/^(\+33|0033)[1-9]\d{8}$/.test(phoneDigits);
+  if(!phoneValide){err.textContent=t("phone_err");err.style.display="block";return;}
+  if(form.email.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())){
+    err.textContent=t("email_err");err.style.display="block";return;
+  }
   step=4;render();
 };
 
@@ -672,14 +776,9 @@ window.submitForm=async()=>{
       acompte:0,acomptePct:form.acomptePct,
       createdAt:new Date().toISOString(),createdBy:"web-client"
     });
-    document.getElementById("app").innerHTML=`<div class="card success"><div class="ic">🎉</div><h2>${t("ok_title")}</h2><p>${t("ok_text")}</p><a href="/confirm.html?id=${id}" class="consult-link">${t("consult")}</a></div>`;
+    document.getElementById("app").innerHTML=`<div class="card success"><div class="ic">🎉</div><h2 class="serif">${t("ok_title")}</h2><p>${t("ok_text")}</p><a href="/confirm.html?id=${id}" class="consult-link">${t("consult")}</a></div>`;
     window.scrollTo(0,0);
-    // Événement Facebook : demande de devis envoyée avec succès (utilisé pour le suivi des campagnes pub)
     if(typeof fbq==="function"){fbq('track','Lead');}
-    // Envoi automatique du lien de consultation par email si le client en a renseigné un.
-    // Best-effort : une erreur ici (mail non configuré côté Réglages, Brevo indisponible...) ne
-    // doit jamais empêcher le client de voir l'écran de succès — le lien affiché ci-dessus et le
-    // partage manuel par l'équipe restent toujours disponibles en secours.
     if(form.email&&form.email.trim()){
       try{ await httpsCallable(fns,"sendDevisConfirmationEmail")({orderId:id}); }
       catch(e){ console.warn("Envoi email confirmation devis : échec silencieux :",e.message); }

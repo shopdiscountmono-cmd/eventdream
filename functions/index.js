@@ -817,6 +817,68 @@ exports.getNextNumber = onCall({ region: REGION }, async (request) => {
 });
 
 // ───────────────────────────────────────────────────────────
+// 8bis) Disponibilité du stock sur une période (catalogue public devis.html)
+//    SANS authentification requise (le client n'est jamais connecté). Renvoie UNIQUEMENT des
+//    quantités déjà réservées par identifiant d'article — jamais de nom, téléphone, adresse ou
+//    tout autre détail de commande. Faire lire la collection "orders" en entier par une page
+//    publique exposerait les données de tous les clients à quiconque inspecte le code de la page ;
+//    cette fonction fait le calcul côté serveur et ne renvoie que le résultat agrégé nécessaire
+//    pour afficher "Plus que 3 disponibles" dans le catalogue.
+// ───────────────────────────────────────────────────────────
+exports.getStockAvailability = onCall({ region: REGION }, async (request) => {
+  const { start, end } = request.data || {};
+  if (!start) throw new HttpsError("invalid-argument", "Date de début requise.");
+  const periodStart = start;
+  const periodEnd = end || start;
+
+  const [orders, stockItems] = await Promise.all([getAllOrders(), getCollection("stock")]);
+
+  // Même filtre que côté app (App.jsx stockShortage) : un brouillon, un devis non confirmé ou
+  // une commande clôturée ne bloque personne d'autre — seules les commandes réellement actives
+  // occupent du stock.
+  const EXCLUDED_STATUSES = ["Brouillon", "Devis", "Non confirmé", "Clôturée"];
+  const orderPeriod = (o) => {
+    const s = o.deliveryDate || o.returnDate || "";
+    const e = o.returnDate || o.deliveryDate || "";
+    if (!s) return null;
+    return { start: s < e ? s : e, end: e > s ? e : s };
+  };
+  const periodsOverlap = (a, b) => a && b && a.start <= b.end && b.start <= a.end;
+  const myPeriod = { start: periodStart < periodEnd ? periodStart : periodEnd, end: periodEnd > periodStart ? periodEnd : periodStart };
+
+  const stockById = {};
+  (stockItems || []).forEach(s => { stockById[s.id] = s; });
+
+  const reserved = {};
+  for (const o of orders) {
+    if (EXCLUDED_STATUSES.includes(o.status)) continue;
+    if (!periodsOverlap(orderPeriod(o), myPeriod)) continue;
+    for (const item of (o.items || [])) {
+      const qty = parseInt(item.qty) || 0;
+      if (qty <= 0) continue;
+      const stockItem = stockById[item.id];
+      if (stockItem && stockItem.components && stockItem.components.length > 0) {
+        // Kit : on décompte ses composants, pas le kit lui-même.
+        for (const comp of stockItem.components) {
+          const cq = (parseInt(comp.qty) || 0) * qty;
+          reserved[comp.id] = (reserved[comp.id] || 0) + cq;
+        }
+      } else {
+        reserved[item.id] = (reserved[item.id] || 0) + qty;
+      }
+    }
+  }
+
+  // Résultat final : disponibilité par article (jamais moins que 0).
+  const availability = {};
+  for (const s of stockItems || []) {
+    const owned = parseInt(s.total) || 0;
+    availability[s.id] = Math.max(0, owned - (reserved[s.id] || 0));
+  }
+  return { availability };
+});
+
+// ───────────────────────────────────────────────────────────
 // 9) Recherche de clients potentiellement en doublon
 //    (même nom approché, même téléphone, ou même email)
 // ───────────────────────────────────────────────────────────

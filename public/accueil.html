@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>EventDream — Location de matériel événementiel</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+    :root{--cream:#FBF6EF;--panel:#F3E9DE;--ink:#3A2E26;--muted:#8A7A6D;--gold:#B8935A;--border:#E4D8C8}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Inter',-apple-system,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
+    .serif{font-family:'Cormorant Garamond',serif}
+    a{color:inherit}
+    .wrap{max-width:560px;margin:0 auto;padding:0 0 40px}
+    @media (min-width:700px){.wrap{max-width:900px}}
+    @media (min-width:1100px){.wrap{max-width:1080px}}
+
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;max-width:1080px;margin:0 auto}
+    .topbar .logo{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;letter-spacing:.08em}
+    .lang-btn{background:#fff;border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--muted)}
+
+    .hero{position:relative;width:100%;aspect-ratio:4/5;max-height:640px;overflow:hidden;background:linear-gradient(135deg,var(--panel),var(--cream))}
+    @media (min-width:700px){.hero{aspect-ratio:16/8}}
+    .hero video,.hero img{width:100%;height:100%;object-fit:cover;display:block}
+    .hero-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(58,46,38,.72) 0%,rgba(58,46,38,.15) 55%,rgba(58,46,38,.05) 100%);display:flex;flex-direction:column;justify-content:flex-end;padding:32px 24px}
+    .hero-title{font-family:'Cormorant Garamond',serif;color:#fff;font-size:38px;font-weight:600;line-height:1.05;max-width:520px}
+    .hero-sub{color:#F0E6D8;font-size:14px;margin-top:10px;max-width:440px;line-height:1.5}
+    .cta-btn{display:inline-block;margin-top:20px;padding:15px 30px;border-radius:14px;background:var(--gold);color:var(--ink);font-weight:800;font-size:15px;text-decoration:none;letter-spacing:.01em}
+    .cta-btn.secondary{background:transparent;border:1.5px solid #fff;color:#fff;margin-left:10px}
+
+    .section{padding:44px 20px}
+    .section h2{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:600;text-align:center;margin-bottom:8px}
+    .section .rule{width:48px;height:1px;background:var(--gold);margin:0 auto 24px}
+    .desc-text{font-size:15px;line-height:1.75;color:var(--muted);text-align:center;max-width:640px;margin:0 auto}
+
+    .gallery-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}
+    @media (min-width:700px){.gallery-grid{grid-template-columns:repeat(3,1fr)}}
+    .gallery-item{border-radius:16px;overflow:hidden;position:relative;background:var(--panel)}
+    .gallery-item img{width:100%;height:220px;object-fit:cover;display:block}
+    .gallery-caption{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(to top,rgba(58,46,38,.75),transparent);color:#fff;font-size:12px;font-weight:600;padding:20px 12px 10px}
+
+    .testi-grid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:24px}
+    @media (min-width:700px){.testi-grid{grid-template-columns:repeat(3,1fr)}}
+    .testi-card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:20px}
+    .testi-stars{color:var(--gold);font-size:14px;margin-bottom:8px}
+    .testi-text{font-size:13.5px;color:var(--ink);line-height:1.6;font-style:italic}
+    .testi-name{font-size:12px;color:var(--muted);font-weight:700;margin-top:12px}
+
+    .final-cta{background:var(--ink);border-radius:24px;margin:0 20px;padding:44px 24px;text-align:center}
+    .final-cta h2{font-family:'Cormorant Garamond',serif;color:var(--cream);font-size:26px;font-weight:600;margin-bottom:10px}
+    .final-cta p{color:#C9B8A3;font-size:13px;margin-bottom:20px}
+
+    .wa-banner-link{display:block;text-align:center;background:#dcfce7;color:#065f46;border-radius:12px;padding:12px 14px;font-size:13px;font-weight:600;text-decoration:none;margin:24px 20px 0}
+    .wa-banner-link strong{font-weight:800}
+    .footer{text-align:center;padding:28px 20px 10px;font-size:11px;color:#B8A99A}
+    .empty-state{text-align:center;padding:60px 20px;color:var(--muted);font-size:14px}
+  </style>
+  <!-- Meta Pixel Code -->
+  <script>
+  !function(f,b,e,v,n,t,s)
+  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+  if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+  n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];
+  s.parentNode.insertBefore(t,s)}(window, document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', '1625864222383566');
+  fbq('track', 'PageView');
+  </script>
+  <noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=1625864222383566&ev=PageView&noscript=1"
+  /></noscript>
+  <!-- End Meta Pixel Code -->
+</head>
+<body>
+<div class="topbar">
+  <div class="logo serif">EVENTDREAM</div>
+  <button class="lang-btn" onclick="toggleLang()">🌐 EN / FR</button>
+</div>
+<div id="app"><div style="text-align:center;padding:80px 20px;color:#B8A99A">⏳</div></div>
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import{getFirestore,doc,getDoc}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
+const db=getFirestore(initializeApp(cfg));
+let lang="fr",landing={},settings={};
+
+const T={
+fr:{title1:"Créez l'événement",title2:"de vos rêves",sub:"Location de mobilier, vaisselle, décoration et plus encore — pour vos mariages, fêtes et cérémonies.",
+cta:"Demander un devis",gallery:"Notre univers",avis:"Ils nous ont fait confiance",final_title:"Prêt à composer votre devis ?",final_sub:"Choisissez vos articles, vérifiez la disponibilité en direct, et recevez votre devis en quelques minutes.",
+wa:"Une question ? Contactez-nous sur WhatsApp :",empty:"Le contenu de cette page arrive très bientôt."},
+en:{title1:"Create the event",title2:"of your dreams",sub:"Furniture, tableware, decoration rental and more — for your weddings, parties and ceremonies.",
+cta:"Request a quote",gallery:"Our world",avis:"They trusted us",final_title:"Ready to build your quote?",final_sub:"Pick your items, check live availability, and get your quote in minutes.",
+wa:"Any question? Contact us on WhatsApp:",empty:"This page's content is coming very soon."}};
+const t=k=>T[lang][k]||k;
+window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";render()};
+
+async function loadData(){
+  const[landingSnap,settingsSnap]=await Promise.all([getDoc(doc(db,"app","landingPage")),getDoc(doc(db,"app","settings"))]);
+  landing=landingSnap.exists()?(landingSnap.data().value||{}):{};
+  settings=settingsSnap.exists()?(settingsSnap.data().value||{}):{};
+  render();
+}
+
+function waBannerHtml(){
+  const tel=(settings.phone||"").replace(/[^0-9+]/g,"");
+  if(!tel)return"";
+  const num=tel.replace(/^0/,"33").replace(/^\+/,"");
+  return`<a href="https://wa.me/${num}" target="_blank" rel="noopener" class="wa-banner-link">💬 ${t("wa")} <strong>${settings.phone}</strong></a>`;
+}
+
+function render(){
+  const hasContent=landing.heroImage||landing.heroVideo||landing.description||(landing.gallery&&landing.gallery.length)||(landing.testimonials&&landing.testimonials.length);
+
+  const heroMedia=landing.heroVideo
+    ?`<video src="${landing.heroVideo}" autoplay muted loop playsinline></video>`
+    :landing.heroImage
+    ?`<img src="${landing.heroImage}" alt="EventDream"/>`
+    :"";
+
+  const hero=`<div class="hero">
+    ${heroMedia}
+    <div class="hero-overlay">
+      <div class="hero-title serif">${t("title1")}<br/>${t("title2")}</div>
+      <div class="hero-sub">${landing.description?escapeHtml(landing.description).split("\n")[0]:t("sub")}</div>
+      <div>
+        <a href="/devis.html" class="cta-btn">${landing.ctaText||t("cta")} →</a>
+      </div>
+    </div>
+  </div>`;
+
+  const descSection=landing.description?`<div class="section"><div class="desc-text">${escapeHtml(landing.description).replace(/\n/g,"<br/>")}</div></div>`:"";
+
+  const gallery=(landing.gallery||[]);
+  const gallerySection=gallery.length?`<div class="section">
+    <h2 class="serif">${t("gallery")}</h2><div class="rule"></div>
+    <div class="gallery-grid">${gallery.map(p=>`<div class="gallery-item"><img src="${p.url}" loading="lazy"/>${p.caption?`<div class="gallery-caption">${escapeHtml(p.caption)}</div>`:""}</div>`).join("")}</div>
+  </div>`:"";
+
+  const testis=(landing.testimonials||[]).filter(tm=>tm.text);
+  const testiSection=testis.length?`<div class="section">
+    <h2 class="serif">${t("avis")}</h2><div class="rule"></div>
+    <div class="testi-grid">${testis.map(tm=>`<div class="testi-card"><div class="testi-stars">${"★".repeat(tm.rating||5)}</div><div class="testi-text">"${escapeHtml(tm.text)}"</div>${tm.name?`<div class="testi-name">— ${escapeHtml(tm.name)}</div>`:""}</div>`).join("")}</div>
+  </div>`:"";
+
+  const finalCta=`<div class="final-cta">
+    <h2 class="serif">${t("final_title")}</h2>
+    <p>${t("final_sub")}</p>
+    <a href="/devis.html" class="cta-btn">${landing.ctaText||t("cta")} →</a>
+  </div>`;
+
+  const emptyState=!hasContent?`<div class="empty-state">✨ ${t("empty")}</div><div style="text-align:center;padding-bottom:20px"><a href="/devis.html" class="cta-btn" style="background:var(--ink);color:var(--cream)">${t("cta")} →</a></div>`:"";
+
+  document.getElementById("app").innerHTML=`<div class="wrap">
+    ${hasContent?hero:""}
+    ${emptyState}
+    ${descSection}
+    ${gallerySection}
+    ${testiSection}
+    ${hasContent?finalCta:""}
+    ${waBannerHtml()}
+    <div class="footer">EventDream — ${new Date().getFullYear()}</div>
+  </div>`;
+  if(typeof fbq==="function"){fbq('track','PageView');}
+}
+
+function escapeHtml(s){
+  const d=document.createElement("div");
+  d.textContent=s;
+  return d.innerHTML;
+}
+
+loadData();
+</script>
+</body>
+</html>

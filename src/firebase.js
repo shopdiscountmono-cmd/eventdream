@@ -3,7 +3,7 @@ import { getFirestore } from "firebase/firestore";
 import { getAuth, createUserWithEmailAndPassword, signOut as fbSignOut } from "firebase/auth";
 import { getMessaging, getToken, onMessage, isSupported } from "firebase/messaging";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { getStorage, ref, uploadString, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
+import { getStorage, ref, uploadString, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",
@@ -106,6 +106,41 @@ export async function uploadQRCode(name, file) {
   const r = ref(storage, path);
   await uploadBytes(r, file);
   return await getDownloadURL(r);
+}
+
+// ───────────────────────────────────────────────────────────
+// Page d'accueil publique (accueil.html) : photos de galerie et vidéo de présentation,
+// gérées depuis l'onglet Réglages → Site internet. Stockées à part de qrcodes/photos/
+// signatures pour rester faciles à retrouver dans la console Storage.
+// ───────────────────────────────────────────────────────────
+export async function uploadLandingImage(kind, file) {
+  const ext = (file.type && file.type.split("/")[1]) || "jpg";
+  const path = `landing/${kind}_${Date.now()}.${ext}`;
+  const r = ref(storage, path);
+  await uploadBytes(r, file);
+  return await getDownloadURL(r);
+}
+
+// La vidéo peut être volumineuse : on suit la progression de l'upload pour l'afficher côté
+// interface (barre de progression), plutôt qu'un long silence sans retour visuel.
+export async function uploadLandingVideo(file, onProgress) {
+  const ext = (file.type && file.type.split("/")[1]) || "mp4";
+  const path = `landing/video_${Date.now()}.${ext}`;
+  const r = ref(storage, path);
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(r, file);
+    task.on(
+      "state_changed",
+      (snap) => { if (onProgress) onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)); },
+      (err) => reject(err),
+      async () => resolve(await getDownloadURL(r))
+    );
+  });
+}
+
+export async function deleteLandingFile(url) {
+  try { await deleteObject(ref(storage, url)); }
+  catch (e) { if (e && e.code !== "storage/object-not-found") throw e; }
 }
 
 // Supprime une photo de Storage à partir de son URL de téléchargement.

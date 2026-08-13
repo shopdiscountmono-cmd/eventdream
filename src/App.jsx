@@ -1,13 +1,13 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import React from "react";
 import { doc, setDoc, onSnapshot, collection, writeBatch, deleteDoc, getDocs, query, orderBy } from "firebase/firestore";
-import { db, auth, createUserAsAdmin, registerPushNotifications, listenForegroundMessages, getNextNumber, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, uploadQRCode, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
+import { db, auth, createUserAsAdmin, registerPushNotifications, listenForegroundMessages, getNextNumber, sendCampaignEmail, uploadSignature, uploadPhoto, deletePhoto, uploadQRCode, uploadLandingImage, uploadLandingVideo, deleteLandingFile, triggerBackup, restoreBackup, fixRecoveredIds, deduplicateClients, findDuplicateClients, mergeSpecificClients } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.44.2 — Fix lien Revolut : montant retire de URL (non supporte, causait redirection generique) + note claire pour le client (05/08/2026)";
+const APP_VERSION = "v4.1.0 — Nouvelle page accueil.html (hero photo/video, galerie, avis, description) editable depuis onglet Site internet (13/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -298,6 +298,19 @@ const DEFAULT_SETTINGS = {
   notifRetraitDelais: [24],
   notifRetourEnabled: true,
   notifRetourDelais: [24],
+};
+
+// ─── PAGE D'ACCUEIL PUBLIQUE (accueil.html) ────────────────────────────────────
+// Contenu éditable depuis l'onglet "Site internet" : photo/vidéo de couverture, galerie,
+// description, avis clients. Document Firestore séparé de "settings" pour rester facile à
+// retrouver et pour ne pas alourdir le document settings (déjà volumineux).
+const DEFAULT_LANDING = {
+  heroImage: "",       // URL Storage de la photo de couverture
+  heroVideo: "",        // URL Storage de la vidéo de présentation (facultative)
+  gallery: [],          // [{ url, caption }]
+  description: "",      // texte de présentation (paragraphe libre)
+  testimonials: [],      // [{ name, text, rating }]
+  ctaText: "Demander un devis",
 };
 
 const STATUS_FLOW = ["Non confirmé", "Confirmée", "Préparée", "Chez le client", "Clôturée"];
@@ -1175,6 +1188,164 @@ function QRUploadButton({ label, onUploaded, name }) {
       </button>
       <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
       {error && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
+function LandingImageUploadButton({ label, onUploaded, kind }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
+  const fileRef = useRef(null);
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setError(null);
+    try {
+      const url = await uploadLandingImage(kind, file);
+      onUploaded(url);
+    } catch (err) { setError("Erreur upload : " + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+  return (
+    <div>
+      <button type="button" onClick={() => fileRef.current?.click()} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px dashed #B8935A", background: "#fff", cursor: "pointer", fontSize: 13, fontFamily: "inherit", fontWeight: 700, color: "#3A2E26" }}>
+        {uploading ? "⏳ Envoi en cours..." : label}
+      </button>
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFile} />
+      {error && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
+function LandingVideoUploadButton({ videoUrl, onUploaded, onRemove }) {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState(null);
+  const fileRef = useRef(null);
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Garde-fou taille : une vidéo trop lourde ralentirait énormément le chargement de la page
+    // pour les visiteurs (souvent en 4G) — 80 Mo est déjà généreux pour un extrait de présentation.
+    if (file.size > 80 * 1024 * 1024) { setError("Vidéo trop lourde (max 80 Mo) — compressez-la avant l'envoi."); return; }
+    setUploading(true); setError(null); setProgress(0);
+    try {
+      if (videoUrl) await deleteLandingFile(videoUrl).catch(() => {});
+      const url = await uploadLandingVideo(file, setProgress);
+      onUploaded(url);
+    } catch (err) { setError("Erreur upload : " + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+  return (
+    <div>
+      {videoUrl && (
+        <div style={{ marginBottom: 10 }}>
+          <video src={videoUrl} controls style={{ width: "100%", borderRadius: 12, background: "#000" }} />
+          <Btn variant="danger" size="sm" onClick={onRemove} style={{ marginTop: 6 }}>🗑️ Supprimer la vidéo</Btn>
+        </div>
+      )}
+      <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px dashed #B8935A", background: "#fff", cursor: uploading ? "not-allowed" : "pointer", fontSize: 13, fontFamily: "inherit", fontWeight: 700, color: "#3A2E26" }}>
+        {uploading ? `⏳ Envoi... ${progress}%` : (videoUrl ? "🎬 Remplacer la vidéo" : "🎬 Téléverser une vidéo (max 80 Mo)")}
+      </button>
+      <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={handleFile} />
+      {error && <div style={{ color: "#ef4444", fontSize: 12, marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
+// ─── Onglet "Site internet" : gestion du contenu de accueil.html ──────────────────────────
+// Toutes les modifications s'appliquent en direct sur la page publique dès l'enregistrement
+// (accueil.html relit le document Firestore "landingPage" à chaque ouverture).
+function SiteInternetView({ landing, setLanding }) {
+  const [local, setLocal] = useState(landing);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setLocal(landing); }, [landing]);
+  const set = (k, v) => setLocal(prev => ({ ...prev, [k]: v }));
+  const save = () => { setLanding(local); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  const addGalleryPhoto = (url) => set("gallery", [...(local.gallery || []), { url, caption: "" }]);
+  const removeGalleryPhoto = (i) => {
+    const photo = local.gallery[i];
+    if (photo?.url) deleteLandingFile(photo.url).catch(() => {});
+    set("gallery", local.gallery.filter((_, idx) => idx !== i));
+  };
+  const setCaption = (i, caption) => set("gallery", local.gallery.map((p, idx) => idx === i ? { ...p, caption } : p));
+
+  const addTestimonial = () => set("testimonials", [...(local.testimonials || []), { name: "", text: "", rating: 5 }]);
+  const updateTestimonial = (i, field, val) => set("testimonials", local.testimonials.map((tm, idx) => idx === i ? { ...tm, [field]: val } : tm));
+  const removeTestimonial = (i) => set("testimonials", local.testimonials.filter((_, idx) => idx !== i));
+
+  return (
+    <div style={{ padding: 20, maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ background: "#FBF6EF", border: "1px solid #E4D8C8", borderRadius: 12, padding: 14, fontSize: 13, color: "#3A2E26" }}>
+        🌐 Ce contenu alimente <strong>accueil.html</strong>, la page publique que tes clients voient en premier (avant de cliquer sur "Demander un devis"). Les modifications sont visibles dès que tu cliques sur Enregistrer.
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>🖼️ Photo de couverture</div>
+        {local.heroImage && (
+          <div style={{ marginBottom: 10, position: "relative" }}>
+            <img src={local.heroImage} style={{ width: "100%", borderRadius: 10, objectFit: "cover", maxHeight: 200 }} />
+            <Btn variant="danger" size="sm" onClick={() => { deleteLandingFile(local.heroImage).catch(() => {}); set("heroImage", ""); }} style={{ marginTop: 6 }}>🗑️ Supprimer</Btn>
+          </div>
+        )}
+        <LandingImageUploadButton label={local.heroImage ? "📷 Remplacer la couverture" : "📷 Ajouter une photo de couverture"} kind="hero" onUploaded={url => set("heroImage", url)} />
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>🎬 Vidéo de présentation</div>
+        <LandingVideoUploadButton videoUrl={local.heroVideo} onUploaded={url => set("heroVideo", url)} onRemove={() => { deleteLandingFile(local.heroVideo).catch(() => {}); set("heroVideo", ""); }} />
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>📝 Description</div>
+        <textarea value={local.description || ""} onChange={e => set("description", e.target.value)} rows={5} placeholder="Présente EventDream en quelques phrases : ce que vous proposez, votre style, votre zone d'intervention..." style={{ width: "100%", padding: 12, borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, fontFamily: "inherit", resize: "vertical" }} />
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>📸 Galerie photos ({(local.gallery || []).length})</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+          {(local.gallery || []).map((p, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: "#fafafa", borderRadius: 10, padding: 10 }}>
+              <img src={p.url} style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <input value={p.caption || ""} onChange={e => setCaption(i, e.target.value)} placeholder="Légende (optionnel)" style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit" }} />
+              </div>
+              <Btn variant="danger" size="sm" onClick={() => removeGalleryPhoto(i)}>🗑️</Btn>
+            </div>
+          ))}
+        </div>
+        <LandingImageUploadButton label="+ Ajouter une photo à la galerie" kind="gallery" onUploaded={addGalleryPhoto} />
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>💬 Avis clients ({(local.testimonials || []).length})</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
+          {(local.testimonials || []).map((tm, i) => (
+            <div key={i} style={{ background: "#fafafa", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={tm.name || ""} onChange={e => updateTestimonial(i, "name", e.target.value)} placeholder="Nom du client" style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit" }} />
+                <select value={tm.rating || 5} onChange={e => updateTestimonial(i, "rating", parseInt(e.target.value))} style={{ padding: "8px 6px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit" }}>
+                  {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{"★".repeat(n)}</option>)}
+                </select>
+              </div>
+              <textarea value={tm.text || ""} onChange={e => updateTestimonial(i, "text", e.target.value)} rows={2} placeholder="Texte de l'avis" style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit", resize: "vertical" }} />
+              <Btn variant="danger" size="sm" onClick={() => removeTestimonial(i)} style={{ alignSelf: "flex-start" }}>🗑️ Retirer cet avis</Btn>
+            </div>
+          ))}
+        </div>
+        <Btn variant="secondary" size="sm" onClick={addTestimonial}>+ Ajouter un avis</Btn>
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>🔘 Texte du bouton principal</div>
+        <input value={local.ctaText || ""} onChange={e => set("ctaText", e.target.value)} placeholder="Demander un devis" style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, fontFamily: "inherit" }} />
+        <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>Ce bouton renvoie toujours vers le catalogue de devis (devis.html).</div>
+      </div>
+
+      <Btn variant="primary" onClick={save} style={{ padding: "14px 0", fontSize: 15 }}>{saved ? "✅ Enregistré !" : "💾 Enregistrer"}</Btn>
     </div>
   );
 }
@@ -5350,6 +5521,7 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orders]);
   const [settings, setSettings] = useFirestoreState("settings", DEFAULT_SETTINGS);
+  const [landing, setLanding] = useFirestoreState("landingPage", DEFAULT_LANDING);
   const [expenseCategories, setExpenseCategories] = useFirestoreState("expenseCategories", EXPENSE_CATEGORIES);
   const [recurringExpenses, setRecurringExpenses] = useFirestoreState("recurringExpenses", []);
   const [pushTokens, setPushTokens] = useFirestoreState("pushTokens", []);
@@ -5800,6 +5972,7 @@ function AppInner() {
     { id: "delivery", label: "Livreur", icon: "🚚", badge: aLivrerCount + aRetirerCount },
     { id: "retours", label: "Retours", icon: "↩️", badge: retourCount },
     { id: "settings", label: "Réglages", icon: "⚙️" },
+    { id: "site", label: "Site internet", icon: "🌐" },
   ];
   // Rôle de l'utilisateur connecté : "livreur" = accès restreint à Calendrier/Livreur/Retours/Réglages.
   // Par défaut (email non listé dans userRoles), tout le monde est "admin" (accès complet),
@@ -5895,6 +6068,7 @@ function AppInner() {
           {view === "delivery" && <DeliveryInterface orders={orders} stock={stock} settings={settings} onShare={sharePdf} onConfirmDelivery={confirmDelivery} onRetour={saveRetour} onEncaisser={(o) => { setSoldeOrder(o); setSoldeMoyenSel("especes"); }} onDeletePhoto={deleteOrderPhoto} />}
           {view === "retours" && <RetoursView orders={orders} stock={stock} settings={settings} onRetour={saveRetour} />}
           {view === "settings" && <SettingsView settings={settings} setSettings={setSettings} driveToken={driveToken} setDriveToken={setDriveToken} driveClientId={driveClientId} setDriveClientId={setDriveClientId} orders={orders} setOrders={setOrders} clients={clients} setClients={setClients} stock={stock} expenses={expenses} pushTokens={pushTokens} setPushTokens={setPushTokens} userRoles={userRoles} setUserRoles={setUserRoles} myRole={myRole} />}
+          {view === "site" && <SiteInternetView landing={landing} setLanding={setLanding} />}
 
           {view === "clients" && (
             <Card>

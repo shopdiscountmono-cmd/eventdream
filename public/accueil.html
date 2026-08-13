@@ -89,17 +89,27 @@ let lang="fr",landing={},settings={};
 const T={
 fr:{title1:"Créez l'événement",title2:"de vos rêves",sub:"Location de mobilier, vaisselle, décoration et plus encore — pour vos mariages, fêtes et cérémonies.",
 cta:"Demander un devis",gallery:"Notre univers",avis:"Ils nous ont fait confiance",final_title:"Prêt à composer votre devis ?",final_sub:"Choisissez vos articles, vérifiez la disponibilité en direct, et recevez votre devis en quelques minutes.",
-wa:"Une question ? Contactez-nous sur WhatsApp :",empty:"Le contenu de cette page arrive très bientôt."},
+wa:"Une question ? Contactez-nous sur WhatsApp :",empty:"Le contenu de cette page arrive très bientôt.",
+fallback_desc:"EventDream vous accompagne dans l'organisation de vos événements : mariages, henné, anniversaires, cérémonies religieuses. Mobilier élégant, vaisselle raffinée, décoration florale et accessoires personnalisés — tout ce qu'il faut pour sublimer votre réception, livré et installé si vous le souhaitez."},
 en:{title1:"Create the event",title2:"of your dreams",sub:"Furniture, tableware, decoration rental and more — for your weddings, parties and ceremonies.",
 cta:"Request a quote",gallery:"Our world",avis:"They trusted us",final_title:"Ready to build your quote?",final_sub:"Pick your items, check live availability, and get your quote in minutes.",
-wa:"Any question? Contact us on WhatsApp:",empty:"This page's content is coming very soon."}};
+wa:"Any question? Contact us on WhatsApp:",empty:"This page's content is coming very soon.",
+fallback_desc:"EventDream helps you plan your events: weddings, henna nights, birthdays, religious ceremonies. Elegant furniture, refined tableware, floral decoration and personalised accessories — everything you need for a beautiful reception, delivered and set up if you wish."}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";render()};
 
 async function loadData(){
-  const[landingSnap,settingsSnap]=await Promise.all([getDoc(doc(db,"app","landingPage")),getDoc(doc(db,"app","settings"))]);
-  landing=landingSnap.exists()?(landingSnap.data().value||{}):{};
-  settings=settingsSnap.exists()?(settingsSnap.data().value||{}):{};
+  try{
+    const[landingSnap,settingsSnap]=await Promise.all([getDoc(doc(db,"app","landingPage")),getDoc(doc(db,"app","settings"))]);
+    landing=landingSnap.exists()?(landingSnap.data().value||{}):{};
+    settings=settingsSnap.exists()?(settingsSnap.data().value||{}):{};
+  }catch(e){
+    // Ne reste JAMAIS bloqué sur le sablier : si la lecture échoue (règles Firestore pas encore
+    // publiées pour ce nouveau document, réseau coupé...), on affiche quand même une page
+    // fonctionnelle avec le contenu de secours ci-dessous, plutôt qu'un écran vide indéfiniment.
+    console.warn("Chargement du contenu de la page d'accueil impossible :",e.message);
+    landing={};settings={};
+  }
   render();
 }
 
@@ -111,7 +121,8 @@ function waBannerHtml(){
 }
 
 function render(){
-  const hasContent=landing.heroImage||landing.heroVideo||landing.description||(landing.gallery&&landing.gallery.length)||(landing.testimonials&&landing.testimonials.length);
+  const description=landing.description&&landing.description.trim()?landing.description:t("fallback_desc");
+  const hasCustomContent=landing.heroImage||landing.heroVideo||(landing.gallery&&landing.gallery.length)||(landing.testimonials&&landing.testimonials.length);
 
   const heroMedia=landing.heroVideo
     ?`<video src="${landing.heroVideo}" autoplay muted loop playsinline></video>`
@@ -119,18 +130,18 @@ function render(){
     ?`<img src="${landing.heroImage}" alt="EventDream"/>`
     :"";
 
-  const hero=`<div class="hero">
+  const hero=`<div class="hero" style="${heroMedia?"":"aspect-ratio:auto;height:auto;min-height:340px"}">
     ${heroMedia}
-    <div class="hero-overlay">
-      <div class="hero-title serif">${t("title1")}<br/>${t("title2")}</div>
-      <div class="hero-sub">${landing.description?escapeHtml(landing.description).split("\n")[0]:t("sub")}</div>
+    <div class="hero-overlay" style="${heroMedia?"":"position:static;background:none;padding:48px 24px"}">
+      <div class="hero-title serif" style="${heroMedia?"color:#fff":"color:var(--ink)"}">${t("title1")}<br/>${t("title2")}</div>
+      <div class="hero-sub" style="${heroMedia?"":"color:var(--muted)"}">${escapeHtml(description).split("\n")[0]}</div>
       <div>
         <a href="/devis.html" class="cta-btn">${landing.ctaText||t("cta")} →</a>
       </div>
     </div>
   </div>`;
 
-  const descSection=landing.description?`<div class="section"><div class="desc-text">${escapeHtml(landing.description).replace(/\n/g,"<br/>")}</div></div>`:"";
+  const descSection=`<div class="section"><div class="desc-text">${escapeHtml(description).replace(/\n/g,"<br/>")}</div></div>`;
 
   const gallery=(landing.gallery||[]);
   const gallerySection=gallery.length?`<div class="section">
@@ -150,15 +161,12 @@ function render(){
     <a href="/devis.html" class="cta-btn">${landing.ctaText||t("cta")} →</a>
   </div>`;
 
-  const emptyState=!hasContent?`<div class="empty-state">✨ ${t("empty")}</div><div style="text-align:center;padding-bottom:20px"><a href="/devis.html" class="cta-btn" style="background:var(--ink);color:var(--cream)">${t("cta")} →</a></div>`:"";
-
   document.getElementById("app").innerHTML=`<div class="wrap">
-    ${hasContent?hero:""}
-    ${emptyState}
+    ${hero}
     ${descSection}
     ${gallerySection}
     ${testiSection}
-    ${hasContent?finalCta:""}
+    ${finalCta}
     ${waBannerHtml()}
     <div class="footer">EventDream — ${new Date().getFullYear()}</div>
   </div>`;

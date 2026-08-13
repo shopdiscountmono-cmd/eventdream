@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v3.44.1 — Sections Devis en attente toujours repliees a chaque ouverture, recherche auto CP<->Ville (App + devis.html) via API gouv.fr (05/08/2026)";
+const APP_VERSION = "v3.44.2 — Fix lien Revolut : montant retire de URL (non supporte, causait redirection generique) + note claire pour le client (05/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -4725,7 +4725,7 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
               )}
               <div style={{ marginTop: 12 }}>
                 <Inp label="Lien Revolut (revolut.me)" value={local.revolutLink || ""} onChange={v => setL("revolutLink", v)} placeholder="https://revolut.me/tonidentifiant" />
-                <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>💡 Affiché comme bouton cliquable sur la page de paiement client — le montant est ajouté automatiquement (ex : /95.55). Ton identifiant Revolut se trouve dans l'app → Profil → "Partager mon compte".</div>
+                <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>💡 Affiché comme bouton cliquable sur la page de paiement client. Contrairement à PayPal, Revolut ne permet pas de préremplir le montant dans le lien (testé : ça redirige vers une page générique) — le client devra saisir le montant lui-même une fois sur Revolut, il lui sera clairement indiqué. Ton identifiant Revolut se trouve dans l'app → Profil → "Partager mon compte".</div>
               </div>
               <div style={{ fontSize: 11, color: "#999", marginTop: 8 }}>Dans l'app Revolut → Profil → "Recevoir" → capture d'écran du QR code.</div>
             </div>

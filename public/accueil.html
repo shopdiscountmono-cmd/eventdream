@@ -89,6 +89,10 @@
     .footer{text-align:center;padding:16px 20px 4px;font-size:11px;color:#B8A99A}
     body{min-height:100vh}
     html,body{overscroll-behavior-y:none}
+    .reveal{opacity:0;transform:translateY(28px);transition:opacity .75s ease,transform .75s ease}
+    .reveal.in{opacity:1;transform:none}
+    .hero-img.h2.in{opacity:1 !important}
+    .hero-img.h1.out{opacity:0 !important}
   </style>
   <!-- Meta Pixel Code -->
   <script>
@@ -129,37 +133,51 @@ const REAL = {
   address: "98 Rue Jean Jaurès, 94800 Villejuif",
   hours: "Lundi, mardi, jeudi, vendredi, samedi et dimanche — 10h à 20h (sur RDV)",
   mapsUrl: "https://www.google.com/maps/place/98+Rue+Jean+Jaur%C3%A8s,+94800+Villejuif/@48.7906993,2.3638936,17z/data=!3m1!4b1!4m6!3m5!1s0x47e673e150ce85b1:0x3c430d564a980bd!8m2!3d48.7906958!4d2.3664685!16s%2Fg%2F11b8vdtj2z",
+  // Lien de partage fourni directement par Said depuis sa fiche Google — le plus fiable pour
+  // atterrir sur les avis, contrairement au lien de fiche générale construit manuellement.
+  reviewsUrl: "https://share.google/PklvJtq6M1BFhFQfW",
   mapsEmbed: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2628.538548457047!2d2.36389357684354!3d48.79069930546724!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47e673e150ce85b1%3A0x3c430d564a980bd!2s98%20Rue%20Jean%20Jaur%C3%A8s%2C%2094800%20Villejuif!5e0!3m2!1sfr!2sfr!4v1719927953974!5m2!1sfr!2sfr",
   instagram: "https://www.instagram.com/eventdream_paris",
   facebook: "https://www.facebook.com/profile.php?id=61563593643692",
   heroPhoto: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Service-%C3%A9v%C3%A9nementiel-%C3%A0-Le-Kremlin-Bic%C3%AAtre.jpg",
+  heroPhoto2: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/D%C3%89CORATION%20%C3%89V%C3%89NEMENTIELLE%20%C3%80%20LE%20KREMLIN-BIC%C3%8ATRE%204.jpeg",
   mobilierPhoto: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Location-de-mat%C3%A9riel-%C3%A9v%C3%A9nementiel-pr%C3%A8s-de-Villejuif%C2%A0.jpg",
-  decoPhoto: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Location-de-mat%C3%A9riel-%C3%A9v%C3%A9nementiel-pr%C3%A8s-de-Villejuif3%C2%A0.jpg"
+  decoPhoto: "https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Location-de-mat%C3%A9riel-%C3%A9v%C3%A9nementiel-pr%C3%A8s-de-Villejuif3%C2%A0.jpg",
+  gallery: [
+    { url:"https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/D%C3%89CORATION-%C3%89V%C3%89NEMENTIELLE-%C3%80-LE-KREMLIN-BIC%C3%8ATRE--.jpg", caption:"Centres de table" },
+    { url:"https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/%C3%89V%C3%89NEMENTS%20%C3%80%20LE%20KREMLIN-BIC%C3%8ATRE.jpeg", caption:"Nos réceptions" },
+    { url:"https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/MAT%C3%89RIEL%20POUR%20LEs%20%20%C3%89V%C3%89NEMENTS%20%C3%80%20LE%20KREMLIN-BIC%C3%8ATRE.jpg", caption:"Matériel événementiel" },
+    { url:"https://local-fr-public.s3.eu-west-3.amazonaws.com/prod/webtool/userfiles/129981/Service-%C3%A9v%C3%A9nementiel-%C3%A0-Le-Kremlin-Bic%C3%AAtre-1.jpg", caption:"Nos espaces" }
+  ],
 };
 
 const T={
 fr:{title1:"Créez l'événement",title2:"de vos rêves",
 cta:"Demander un devis",cta2:"Nous appeler",
 why1:"Disponibilité",why2:"Conseils avisés",why3:"Devis gratuit",why4:"Réponse rapide",
-services:"Nos services",mobilier_t:"Location de matériel",mobilier_d:"Tables, chaises, mange-debout, nappage et kits de vaisselle — pour toutes les configurations de salle.",
-deco_t:"Décoration événementielle",deco_d:"Centres de table, cadeaux d'invités, tableaux de bienvenue personnalisés — chaque détail compte.",
+services:"Nos services",mobilier_t:"Location de matériel",mobilier_d:"Tables rectangulaires et rondes (152cm), chaises pliables et Napoléon en centaines d'unités, mange-debout, nappage et kits de vaisselle en porcelaine ou en verre.",
+deco_t:"Décoration événementielle",deco_d:"Centres de table en fleurs blanches, cadeaux d'invités personnalisés (bougies en pot fabriquées sur demande), tableaux de bienvenue élégants et informatifs.",
+mobilier_list:"Tables 8-10 pers.|Chaises (centaines)|Mange-debout 80cm|Nappage & kits vaisselle",
+deco_list:"Centres de table fleuris|Cadeaux d'invités sur-mesure|Tableaux de bienvenue|Ambiance personnalisée",
 gallery:"Notre univers",avis:"Ils nous ont fait confiance",
 reviews_title:"Retrouvez nos avis sur Google",reviews_text:"Découvrez les retours de nos clients directement sur notre fiche Google — chaque avis y est vérifié et authentique.",reviews_cta:"Voir nos avis Google",
 infos:"Infos pratiques",horaires:"Horaires",adresse:"Adresse",suivre:"Nous suivre",
 final_title:"Prêt à composer votre devis ?",final_sub:"Choisissez vos articles, vérifiez la disponibilité en direct, et recevez votre devis en quelques minutes.",
 wa:"Une question ? Contactez-nous sur WhatsApp :",
-fallback_desc:"EventDream vous accompagne dans l'organisation de vos événements à Villejuif et dans tout le Val-de-Marne : mariages, henné, anniversaires, baptêmes et cérémonies religieuses. Mobilier élégant, vaisselle raffinée, décoration florale et accessoires personnalisés — tout ce qu'il faut pour transformer chaque occasion en un moment inoubliable, livré et installé si vous le souhaitez."},
+fallback_desc:"EventDream vous accompagne dans l'organisation de vos événements à Villejuif et dans toute l'Île-de-France : mariages, henné, anniversaires, baptêmes et cérémonies religieuses. Mobilier élégant, vaisselle raffinée, décoration florale et accessoires personnalisés — tout ce qu'il faut pour transformer chaque occasion en un moment inoubliable, livré et installé si vous le souhaitez."},
 en:{title1:"Create the event",title2:"of your dreams",
 cta:"Request a quote",cta2:"Call us",
 why1:"Availability",why2:"Expert advice",why3:"Free quote",why4:"Fast reply",
-services:"Our services",mobilier_t:"Equipment rental",mobilier_d:"Tables, chairs, cocktail tables, linen and tableware kits — for every room layout.",
-deco_t:"Event decoration",deco_d:"Centrepieces, guest favours, personalised welcome signs — every detail matters.",
+services:"Our services",mobilier_t:"Equipment rental",mobilier_d:"Rectangular and round tables (152cm), folding and Napoleon chairs by the hundred, cocktail tables, linen and porcelain or glass tableware kits.",
+deco_t:"Event decoration",deco_d:"White floral centrepieces, personalised guest favours (made-to-order potted candles), elegant and informative welcome signs.",
+mobilier_list:"Tables (8-10 guests)|Chairs (hundreds)|Cocktail tables 80cm|Linen & tableware kits",
+deco_list:"Floral centrepieces|Custom guest favours|Welcome signs|Personalised styling",
 gallery:"Our world",avis:"They trusted us",
 reviews_title:"Find our reviews on Google",reviews_text:"See what our clients say directly on our Google Business listing — every review is verified and genuine.",reviews_cta:"See our Google reviews",
 infos:"Practical info",horaires:"Opening hours",adresse:"Address",suivre:"Follow us",
 final_title:"Ready to build your quote?",final_sub:"Pick your items, check live availability, and get your quote in minutes.",
 wa:"Any question? Contact us on WhatsApp:",
-fallback_desc:"EventDream helps you plan your events in Villejuif and across Val-de-Marne: weddings, henna nights, birthdays, christenings and religious ceremonies. Elegant furniture, refined tableware, floral decoration and personalised accessories — everything you need to make every occasion unforgettable, delivered and set up if you wish."}};
+fallback_desc:"EventDream helps you plan your events in Villejuif and across the Île-de-France region: weddings, henna nights, birthdays, christenings and religious ceremonies. Elegant furniture, refined tableware, floral decoration and personalised accessories — everything you need to make every occasion unforgettable, delivered and set up if you wish."}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";render()};
 
@@ -194,13 +212,17 @@ function render(){
   const phone=settings.phone||"06 52 36 08 49";
   const phoneHref=phone.replace(/[^0-9+]/g,"");
 
-  // Hero : vidéo si téléversée > photo de couverture personnalisée > photo réelle du site officiel.
-  const heroMedia=landing.heroVideo
-    ?`<video src="${landing.heroVideo}" autoplay muted loop playsinline></video>`
-    :`<img src="${landing.heroImage||REAL.heroPhoto}" alt="EventDream"/>`;
+  // Hero : vidéo si téléversée (prioritaire) > sinon alternance douce entre 2 photos réelles
+  // (photo de couverture personnalisée si définie, sinon 2 photos du site officiel) — pour donner
+  // du mouvement à la page sans dépendre d'une vidéo.
+  const useVideo=!!landing.heroVideo;
+  const heroImg1=landing.heroImage||REAL.heroPhoto;
+  const heroImg2=landing.heroImage?null:REAL.heroPhoto2;
 
   const hero=`<div class="hero">
-    ${heroMedia}
+    ${useVideo?`<video src="${landing.heroVideo}" autoplay muted loop playsinline></video>`:`
+    <img class="hero-img h1" src="${heroImg1}" alt="EventDream" style="position:absolute;inset:0;opacity:1;transition:opacity 1.4s ease"/>
+    ${heroImg2?`<img class="hero-img h2" src="${heroImg2}" alt="EventDream" style="position:absolute;inset:0;opacity:0;transition:opacity 1.4s ease"/>`:""}`}
     <div class="hero-overlay">
       <div class="hero-title serif">${t("title1")}<br/>${t("title2")}</div>
       <div class="hero-sub">${escapeHtml(description).split("\n")[0]}</div>
@@ -211,53 +233,54 @@ function render(){
     </div>
   </div>`;
 
-  const descSection=`<div class="section"><div class="desc-text">${escapeHtml(description).replace(/\n/g,"<br/>")}</div></div>`;
+  const descSection=`<div class="section reveal"><div class="desc-text">${escapeHtml(description).replace(/\n/g,"<br/>")}</div></div>`;
 
-  const whySection=`<div class="why-grid">
+  const whySection=`<div class="section reveal" style="padding-bottom:0"><div class="why-grid">
     <div class="why-card"><div class="ic">🕐</div><div class="lb">${t("why1")}</div></div>
     <div class="why-card"><div class="ic">💬</div><div class="lb">${t("why2")}</div></div>
     <div class="why-card"><div class="ic">📋</div><div class="lb">${t("why3")}</div></div>
     <div class="why-card"><div class="ic">⚡</div><div class="lb">${t("why4")}</div></div>
-  </div>`;
+  </div></div>`;
 
-  const servicesSection=`<div class="section">
+  const chips=list=>list.split("|").map(x=>`<span style="display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);border-radius:20px;padding:5px 12px;font-size:11px;color:#fff;margin:3px 4px 0 0">${x}</span>`).join("");
+  const servicesSection=`<div class="section reveal">
     <h2 class="serif">${t("services")}</h2><div class="rule"></div>
     <div class="services-grid">
       <a href="/devis.html" class="service-card" style="text-decoration:none">
         <img src="${REAL.mobilierPhoto}"/><div class="veil"></div>
-        <div class="content"><h3 class="serif">${t("mobilier_t")}</h3><p>${t("mobilier_d")}</p></div>
+        <div class="content"><h3 class="serif">${t("mobilier_t")}</h3><p>${t("mobilier_d")}</p><div style="margin-top:10px">${chips(t("mobilier_list"))}</div></div>
       </a>
       <a href="/devis.html" class="service-card" style="text-decoration:none">
         <img src="${REAL.decoPhoto}"/><div class="veil"></div>
-        <div class="content"><h3 class="serif">${t("deco_t")}</h3><p>${t("deco_d")}</p></div>
+        <div class="content"><h3 class="serif">${t("deco_t")}</h3><p>${t("deco_d")}</p><div style="margin-top:10px">${chips(t("deco_list"))}</div></div>
       </a>
     </div>
   </div>`;
 
-  const gallery=(landing.gallery||[]);
-  const gallerySection=gallery.length?`<div class="section">
+  const gallery=(landing.gallery&&landing.gallery.length?landing.gallery:REAL.gallery);
+  const gallerySection=gallery.length?`<div class="section reveal">
     <h2 class="serif">${t("gallery")}</h2><div class="rule"></div>
     <div class="gallery-grid">${gallery.map(p=>`<div class="gallery-item"><img src="${p.url}" loading="lazy"/>${p.caption?`<div class="gallery-caption">${escapeHtml(p.caption)}</div>`:""}</div>`).join("")}</div>
   </div>`:"";
 
   const testis=(landing.testimonials||[]).filter(tm=>tm.text);
-  const testiSection=testis.length?`<div class="section">
+  const testiSection=testis.length?`<div class="section reveal">
     <h2 class="serif">${t("avis")}</h2><div class="rule"></div>
     <div class="testi-grid">${testis.map(tm=>`<div class="testi-card"><div class="testi-stars">${"★".repeat(tm.rating||5)}</div><div class="testi-text">"${escapeHtml(tm.text)}"</div>${tm.name?`<div class="testi-name">— ${escapeHtml(tm.name)}</div>`:""}</div>`).join("")}</div>
   </div>`:"";
 
   // Avis Google : lien direct vers la fiche officielle (aucun scraping, 100% conforme) — un import
   // automatique des avis eux-mêmes nécessite une clé API Google Places dédiée, en discussion.
-  const reviewsSection=`<div class="section" style="padding-top:0">
+  const reviewsSection=`<div class="section reveal" style="padding-top:0">
     <div class="reviews-card">
       <div class="reviews-stars">★★★★★</div>
       <h2 class="serif" style="font-size:20px;margin-bottom:10px">${t("reviews_title")}</h2>
       <p>${t("reviews_text")}</p>
-      <a href="${REAL.mapsUrl}" target="_blank" rel="noopener" class="cta-btn" style="background:var(--ink);color:var(--cream)">${t("reviews_cta")} →</a>
+      <a href="${REAL.reviewsUrl}" target="_blank" rel="noopener" class="cta-btn" style="background:var(--ink);color:var(--cream)">${t("reviews_cta")} →</a>
     </div>
   </div>`;
 
-  const infoSection=`<div class="section">
+  const infoSection=`<div class="section reveal">
     <h2 class="serif">${t("infos")}</h2><div class="rule"></div>
     <div class="info-grid">
       <div class="info-card"><iframe src="${REAL.mapsEmbed}" loading="lazy"></iframe></div>
@@ -273,7 +296,7 @@ function render(){
     </div>
   </div>`;
 
-  const finalCta=`<div class="final-cta">
+  const finalCta=`<div class="final-cta reveal">
     <h2 class="serif">${t("final_title")}</h2>
     <p>${t("final_sub")}</p>
     <a href="/devis.html" class="cta-btn">${landing.ctaText||t("cta")} →</a>
@@ -293,6 +316,35 @@ function render(){
     <div class="footer">EventDream — ${new Date().getFullYear()}</div>
   </div>`;
   if(typeof fbq==="function"){fbq('track','PageView');}
+  initReveal();
+  initHeroCrossfade();
+}
+
+// Fait apparaître chaque section en fondu + léger glissement au fur et à mesure du défilement
+// (au lieu de tout afficher d'un bloc statique) — donne du mouvement à la page sans dépendre de
+// contenu supplémentaire.
+function initReveal(){
+  const els=document.querySelectorAll(".reveal");
+  if(!("IntersectionObserver" in window)){ els.forEach(el=>el.classList.add("in")); return; }
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add("in"); obs.unobserve(e.target); } });
+  },{threshold:0.12});
+  els.forEach(el=>obs.observe(el));
+}
+
+// Alterne doucement entre 2 photos réelles dans le hero (toutes les 5s) tant qu'aucune vidéo
+// n'est en place — la page respire un peu plus qu'avec une seule image fixe.
+let heroTimer=null;
+function initHeroCrossfade(){
+  clearInterval(heroTimer);
+  const h1=document.querySelector(".hero-img.h1"),h2=document.querySelector(".hero-img.h2");
+  if(!h1||!h2)return;
+  let toggled=false;
+  heroTimer=setInterval(()=>{
+    toggled=!toggled;
+    h1.classList.toggle("out",toggled);
+    h2.classList.toggle("in",toggled);
+  },5000);
 }
 
 loadData();

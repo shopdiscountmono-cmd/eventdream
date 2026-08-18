@@ -67,6 +67,13 @@ caution:"🔒 Security deposit",caution_sub:"Required on delivery / pickup day �
 askmod:"✏️ Request a change",askmod_msg:"Hello, I'd like to modify my quote"}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");render()};
+// SÉCURITÉ : cette page affiche le nom saisi par le client à l'étape 1 du devis (donnée
+// public non fiable). Sans échappement, un devis créé avec du code dans le champ "Nom" (ex:
+// via un script tiers ou une saisie malveillante) s'exécuterait dans le navigateur de quiconque
+// ouvre ce lien — y compris l'équipe qui vérifie le devis. esc() neutralise ce risque.
+function esc(s){
+  return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
 // Référence lisible du devis (DEV-2026-001 une fois attribuée par l'équipe, sinon l'id technique).
 const refDevisC=o=>(o&&o.devisNumber)||(o&&o.id)||"";
@@ -186,7 +193,7 @@ function render(){
   }
   else if(method==="virement"&&settings.iban)qr=`<div class="iban-box"><div style="font-size:12px;color:#666">${t("iban")}</div><div class="iban-val">${settings.iban}</div><div style="font-size:12px;color:#666;margin-bottom:8px">${t("amt")} <strong>${acompte.toFixed(2)} €</strong></div><button class="copy-btn" onclick="navigator.clipboard.writeText('${settings.iban}')">${t("copy")}</button></div>`;
   document.getElementById("app").innerHTML=`
-    <div class="header"><div class="lbl">${t("title")}</div><div class="id">${refDevisC(order)}</div><div class="client">${order.clientName}</div></div>
+    <div class="header"><div class="lbl">${t("title")}</div><div class="id">${refDevisC(order)}</div><div class="client">${esc(order.clientName)}</div></div>
     ${buildRecapCard(order)}
     <div class="card"><h2>💰 ${t("choose")}</h2><button class="choice-btn${pct===30?" sel":""}" onclick="setPct(30)">30% — ${(total*.3).toFixed(2)} € (${t("p30")})</button><button class="choice-btn${pct===100?" sel":""}" onclick="setPct(100)">100% — ${total.toFixed(2)} € (${t("p100")})</button></div>
     <div class="card"><h2>💳 ${t("pay")}</h2>${tabs}<div class="total-box"><div class="lbl">${t("amt")}</div><div class="amt">${acompte.toFixed(2)} €</div></div>${qr}<div style="background:#fef9c3;border-radius:10px;padding:12px;font-size:12px;color:#92400e;margin-top:12px;line-height:1.5">${t("legal")}</div><button class="pay-btn" onclick="doConfirm()">${t("btn")}</button></div>

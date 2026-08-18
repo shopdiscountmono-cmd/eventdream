@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v4.1.0 — Nouvelle page accueil.html (hero photo/video, galerie, avis, description) editable depuis onglet Site internet (13/08/2026)";
+const APP_VERSION = "v4.1.2 — Sous-total articles sur la fiche detail + devis.html : livraison limitee a l'Ile-de-France (17/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -2676,6 +2676,10 @@ function DeliverySheet({ order, settings, onShare, stock, onEncaisser, onDeleteP
                 <span style={{ background: "#1a1a2e", color: "#fff", borderRadius: 8, padding: "2px 10px", fontWeight: 800, fontSize: 14 }}>× {item.qty}</span>
               </div>
             ))}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, marginTop: 4, borderTop: "2px solid #e5e7eb", fontSize: 13, fontWeight: 800, color: "#1a1a2e" }}>
+              <span>Sous-total articles</span>
+              <span>{orderSubtotal(order).toFixed(2)} €</span>
+            </div>
           </div>
           {(order.freeTextRequest || order.notes) && (
             <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 12, padding: 14, marginBottom: 14 }}>
@@ -6186,7 +6190,13 @@ function AppInner() {
                       {order.returnDate && <span>↩️ Retour : {fmtD(order.returnDate)}{order.returnTime ? ` à ${order.returnTime}` : ""}</span>}
                     </div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-                      {order.items.map(item => <span key={item.id} style={{ background: "#f4f5f7", borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{item.icon} {item.name} × {item.qty}</span>)}
+                      {order.items.map(item => {
+                        const lineTotal = (parseFloat(item.price) || 0) * (parseInt(item.qty) || 0) + (item.cleaningSelected ? (parseFloat(item.cleaningPrice) || 0) * (parseInt(item.qty) || 0) : 0);
+                        return <span key={item.id} style={{ background: "#f4f5f7", borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{item.icon} {item.name} × {item.qty} — {lineTotal.toFixed(2)} €</span>;
+                      })}
+                      {order.deliveryMode === "livraison" && (deliveryCostOf(order, settings) + deliveryExtrasCost(order)) > 0 && (
+                        <span style={{ background: "#eff6ff", color: "#1e40af", borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>🚚 Livraison — {(deliveryCostOf(order, settings) + deliveryExtrasCost(order)).toFixed(2)} €</span>
+                      )}
                     </div>
                     {(order.freeTextRequest || order.notes) && (
                       <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: 13, color: "#92400e", display: "flex", flexDirection: "column", gap: 4 }}>

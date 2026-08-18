@@ -211,6 +211,9 @@ rue:"Numéro et rue",cp:"Code postal",ville:"Ville",
 addr_incomplete:"Complétez le code postal et la ville pour calculer les frais",
 cp_err:"Code postal invalide (5 chiffres attendus)",
 hors_zone:"Adresse hors de notre zone de livraison — nous vous recontactons pour un devis personnalisé.",
+hors_idf:"Nous ne livrons pas encore dans votre ville.",
+hors_idf_detail:"La livraison est actuellement réservée à l'Île-de-France. Vous pouvez toutefois venir récupérer votre commande directement à notre entrepôt de Villejuif.",
+switch_retrait:"🏠 Passer en retrait entrepôt",
 frais_apres:"Frais de livraison confirmés par nos soins",
 verif_dispo:"Vérification de la disponibilité pour vos dates...",
 empty_cat:"Aucun article dans cette catégorie.",
@@ -228,6 +231,9 @@ trajet:"Trips",aller:"One way",allerRetour:"Round trip",
 date:"Delivery / pickup date",retDate:"Return date",
 washing:"Washing option",
 calcul:"Calculating...",addr_err:"Address not recognized — fees will be confirmed by our team.",
+hors_idf:"We don't deliver to your city yet.",
+hors_idf_detail:"Delivery is currently limited to the Île-de-France region. You can still come pick up your order directly from our warehouse in Villejuif.",
+switch_retrait:"🏠 Switch to warehouse pickup",
 recap:"Summary",livraison:"Delivery",total:"Total",
 acompte:"Deposit to pay",p30:"30% — reservation",p100:"100% — full payment",
 acompte_note:"You will receive payment instructions by message after validation.",
@@ -251,6 +257,15 @@ select_item_err:"Please select at least one item.",
 dispo_indispo:"Unavailable for these dates",dispo_max:"Maximum reached: ",dispo_ok:" available"}};
 const t=k=>T[lang][k]||k;
 window.toggleLang=()=>{lang=lang==="fr"?"en":"fr";document.getElementById("logo-sub").textContent=t("sub");renderWaBanner();render()};
+// SÉCURITÉ : cette page insère du texte saisi par n'importe quel visiteur (nom, téléphone,
+// adresse, demande spéciale...) directement dans le DOM via innerHTML/attributs HTML. Sans
+// échappement, un visiteur malveillant pourrait taper du code dans un champ (ex: "Demande
+// spéciale") qui s'exécuterait ensuite dans le navigateur de quiconque ouvre ce devis — y compris
+// dans confirm.html ou lors de la relecture. esc() neutralise les caractères dangereux (&<>"')
+// avant toute insertion, aussi bien en contenu texte qu'en valeur d'attribut.
+function esc(s){
+  return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
 const fmtD=d=>{if(!d)return"—";const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d};
 const TODAY=new Date().toISOString().slice(0,10);
 const nextDay=d=>{if(!d)return TODAY;const dt=new Date(d);dt.setDate(dt.getDate()+1);return dt.toISOString().slice(0,10)};
@@ -353,6 +368,10 @@ function cartCount(){return Object.values(form.items).reduce((s,q)=>s+(q>0?q:0),
 
 // Distance maximale considérée comme une livraison normale.
 const MAX_KM=100;
+// La livraison est réservée à l'Île-de-France. Le retrait en entrepôt, lui, n'a aucune
+// restriction géographique (c'est le client qui vient), donc cette liste n'intervient QUE
+// pour le mode "livraison".
+const IDF_DEPTS=["75","77","78","91","92","93","94","95"];
 
 function fullAddress(){
   const rue=(form.rue||"").trim(),cp=(form.cp||"").trim(),ville=(form.ville||"").trim();
@@ -417,6 +436,16 @@ window.onAddrField=(champ,val)=>{
     updateAddrStatusDom();
     return;
   }
+  // La livraison est limitée à l'Île-de-France (75, 77, 78, 91, 92, 93, 94, 95) — le retrait en
+  // entrepôt reste possible depuis n'importe où puisque c'est le client qui se déplace. On
+  // vérifie le département AVANT de lancer le calcul de distance : inutile d'appeler l'API si on
+  // sait déjà qu'on ne livre pas là-bas, et ça évite d'annoncer un prix pour rien.
+  const dept=(form.cp||"").slice(0,2);
+  if(!IDF_DEPTS.includes(dept)){
+    form.deliveryKm=0;form.deliveryMin=0;form.addrStatus="horsidf";
+    render();
+    return;
+  }
   form.addrStatus="checking";
   updateAddrStatusDom();
   debounceTimer=setTimeout(async()=>{
@@ -433,6 +462,7 @@ function addrStatusLabel(){
   if(form.addrStatus==="checking")return{text:"📍 "+t("calcul"),color:"#94a3b8"};
   if(form.addrStatus==="ok")return{text:`✅ ${form.ville.trim()} — ${t("s4")==="Récapitulatif"?"adresse validée":"address validated"}`,color:"#10b981"};
   if(form.addrStatus==="horszone")return{text:"📍 "+t("hors_zone"),color:"#B8935A"};
+  if(form.addrStatus==="horsidf")return{text:"🚫 "+t("hors_idf"),color:"#c2410c"};
   if(form.addrStatus==="error")return{text:"⚠️ "+t("addr_err"),color:"#B8935A"};
   if(form.addrStatus==="incomplete")return{text:"✍️ "+t("addr_incomplete"),color:"#94a3b8"};
   return{text:"",color:"#94a3b8"};
@@ -545,13 +575,20 @@ function render(){
 
       ${form.mode==="livraison"?`
         <label>${t("address")} *</label>
-        <input id="f-rue" value="${form.rue}" placeholder="${t("rue")}" autocomplete="street-address" oninput="onAddrField('rue',this.value)" style="margin-bottom:8px"/>
+        <input id="f-rue" value="${esc(form.rue)}" placeholder="${t("rue")}" autocomplete="street-address" oninput="onAddrField('rue',this.value)" style="margin-bottom:8px"/>
         <div class="addr-grid">
-          <input id="f-cp" value="${form.cp}" placeholder="${t("cp")}" inputmode="numeric" maxlength="5" autocomplete="postal-code" oninput="onAddrField('cp',this.value)" style="margin-bottom:4px"/>
-          <input id="f-ville" value="${form.ville}" placeholder="${t("ville")}" autocomplete="address-level2" oninput="onAddrField('ville',this.value)" style="margin-bottom:4px"/>
+          <input id="f-cp" value="${esc(form.cp)}" placeholder="${t("cp")}" inputmode="numeric" maxlength="5" autocomplete="postal-code" oninput="onAddrField('cp',this.value)" style="margin-bottom:4px"/>
+          <input id="f-ville" value="${esc(form.ville)}" placeholder="${t("ville")}" autocomplete="address-level2" oninput="onAddrField('ville',this.value)" style="margin-bottom:4px"/>
         </div>
         <div id="addr-status" style="font-size:12px;font-weight:700;color:${addrStatusLabel().color};margin-bottom:16px">${addrStatusLabel().text}</div>
 
+        ${form.addrStatus==="horsidf"?`
+        <div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:14px;padding:16px;margin-bottom:16px">
+          <div style="font-weight:800;font-size:14px;color:#9a3412;margin-bottom:6px">🚫 ${t("hors_idf")}</div>
+          <div style="font-size:13px;color:#9a3412;line-height:1.5;margin-bottom:14px">${t("hors_idf_detail")}</div>
+          <button class="next-btn" style="width:100%" onclick="setMode('retrait')">${t("switch_retrait")}</button>
+        </div>
+        `:`
         <label>${t("trajet")}</label>
         <div class="trajet-row">
           <button class="trajet-btn${form.trajetAller&&!form.trajetRetour?" sel":""}" onclick="setTrajet(true,false)">${t("aller")}</button>
@@ -580,6 +617,7 @@ function render(){
           <input type="number" inputmode="numeric" min="0" value="${form.etage}" placeholder="0" onchange="onEtageChange(this.value)"/>
           <span style="font-size:11px;color:var(--muted)">${t("etage_hint")}</span>
         </div>`:""}
+      `}
       `:""}
       <div id="err1" class="err" style="display:none"></div>
       <div class="nav-btns"><button class="next-btn" style="flex:1" onclick="goStepCatalogue()">${t("next")} →</button></div>
@@ -622,7 +660,7 @@ function render(){
       ${availabilityLoading?`<div class="dispo-checking">⏳ ${t("verif_dispo")}</div>`:""}
       <div class="cat-chips">${chips}</div>
       <div class="prod-grid">${cards||`<div class="empty-cat">${t("empty_cat")}</div>`}</div>
-      <div style="margin-top:18px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" onblur="saveFree()">${form.freeText||""}</textarea></div>
+      <div style="margin-top:18px"><label>${t("free_text")}</label><textarea id="f-free" rows="3" placeholder="${t("free_text_ph")}" onblur="saveFree()">${esc(form.freeText||"")}</textarea></div>
       <div id="err2" class="err" style="display:none"></div>
       <div class="nav-btns"><button class="back-btn" onclick="goBackTo(1)">← ${t("back")}</button><button class="next-btn" onclick="goStepCoordonnees()">${t("next")} →</button></div>
     </div>
@@ -638,9 +676,9 @@ function render(){
   else if(step===3){
     document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2>👤 ${t("s3")}</h2>
-      <label>${t("name")} *</label><input id="f-name" value="${form.name}" placeholder="Prénom Nom" autocomplete="name"/>
-      <label>${t("phone")} *</label><input id="f-phone" type="tel" value="${form.phone}" placeholder="06 XX XX XX XX" autocomplete="tel"/>
-      <label>${t("email")}</label><input id="f-email" type="email" value="${form.email}" placeholder="email@exemple.com" autocomplete="email"/>
+      <label>${t("name")} *</label><input id="f-name" value="${esc(form.name)}" placeholder="Prénom Nom" autocomplete="name"/>
+      <label>${t("phone")} *</label><input id="f-phone" type="tel" value="${esc(form.phone)}" placeholder="06 XX XX XX XX" autocomplete="tel"/>
+      <label>${t("email")}</label><input id="f-email" type="email" value="${esc(form.email)}" placeholder="email@exemple.com" autocomplete="email"/>
       <div id="err3" class="err" style="display:none"></div>
       <div class="nav-btns"><button class="back-btn" onclick="goBackTo(2)">← ${t("back")}</button><button class="next-btn" onclick="goStepRecap()">${t("next")} →</button></div>
     </div>`;
@@ -653,10 +691,10 @@ function render(){
     const selItems=Object.entries(form.items).filter(([,q])=>q>0);
     document.getElementById("app").innerHTML=`${bar}
     <div class="card"><h2 class="serif">📋 ${t("recap")}</h2>
-      <div style="margin-bottom:8px;font-size:15px"><strong>${form.name}</strong></div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:2px">${form.phone}${form.email?` · ${form.email}`:""}</div>
+      <div style="margin-bottom:8px;font-size:15px"><strong>${esc(form.name)}</strong></div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:2px">${esc(form.phone)}${form.email?` · ${esc(form.email)}`:""}</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:2px">📅 ${fmtD(form.date)}${form.returnDate?" → "+fmtD(form.returnDate):""}</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:14px">${form.mode==="livraison"?`📍 ${fullAddress()||form.address}`:"🏠 "+t("mode_ret")}</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:14px">${form.mode==="livraison"?`📍 ${esc(fullAddress()||form.address)}`:"🏠 "+t("mode_ret")}</div>
       ${selItems.map(([id,qty])=>{
         const it=stockItems.find(s=>s.id===id);
         if(!it)return"";
@@ -666,7 +704,7 @@ function render(){
       }).join("")}
       ${del>0?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700">${del.toFixed(2)} €</span></div>`:(form.mode==="livraison"&&form.addrStatus!=="ok"?`<div class="recap-row"><span>${delLabel()}</span><span style="font-weight:700;font-size:12px;color:#B8935A">${t("frais_apres")}</span></div>`:"")}
       <div class="recap-total"><span>${t("total")}</span><span>${total.toFixed(2)} €</span></div>
-      ${form.freeText?`<div style="background:var(--panel);border-radius:10px;padding:12px;font-size:13px;margin-top:10px">📝 ${form.freeText}</div>`:""}
+      ${form.freeText?`<div style="background:var(--panel);border-radius:10px;padding:12px;font-size:13px;margin-top:10px">📝 ${esc(form.freeText)}</div>`:""}
     </div>
     <div class="card"><h2 class="serif">💰 ${t("acompte")}</h2>
       <div class="acompte-row">
@@ -730,6 +768,7 @@ window.goStepCatalogue=()=>{
   if(form.mode==="livraison"){
     if(!form.rue.trim()||!form.ville.trim()){err.textContent=t("req");err.style.display="block";return;}
     if(!cpValide()){err.textContent=t("cp_err");err.style.display="block";return;}
+    if(form.addrStatus==="horsidf"){err.textContent=t("hors_idf");err.style.display="block";return;}
   }
   if(form.returnDate&&form.returnDate<=form.date){
     form.returnDate=nextDay(form.date);

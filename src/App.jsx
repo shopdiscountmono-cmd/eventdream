@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v4.1.3 — Fix notifications perdues apres mise a jour : rafraichissement silencieux du token au lieu d'un doublon manuel (17/08/2026)";
+const APP_VERSION = "v4.2.0 — Archivage auto des devis/brouillons dont la date est passee (statut Expire, historique client conserve) (17/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -314,7 +314,7 @@ const DEFAULT_LANDING = {
 };
 
 const STATUS_FLOW = ["Non confirmé", "Confirmée", "Préparée", "Chez le client", "Clôturée"];
-const STATUS_COLORS = { "Non confirmé": "#f97316", "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "Chez le client": "#10b981", "Clôturée": "#6b7280" };
+const STATUS_COLORS = { "Non confirmé": "#f97316", "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "Chez le client": "#10b981", "Clôturée": "#6b7280", "Expiré": "#d1d5db" };
 const EXPENSE_CATEGORIES = ["Achat matériel", "Maintenance / Réparation", "Carburant", "Loyer / Entrepôt", "Salaires", "Fournitures", "Assurance", "Autre"];
 const CAT_COLORS = { "Achat matériel": "#3b82f6", "Maintenance / Réparation": "#8b5cf6", "Carburant": "#f97316", "Loyer / Entrepôt": "#ef4444", "Salaires": "#10b981", "Fournitures": "#f59e0b", "Assurance": "#06b6d4", "Autre": "#6b7280" };
 const ICON_LIBRARY = ["🪑","💺","⭕","▬","🟦","🍽️","🍴","🔪","🥄","🍷","🥛","🍾","🥂","☕","🫖","🍶","🔥","⛺","🎪","🎉","🎈","🎀","🕯️","💡","🔦","🪩","🎤","🔊","🎸","📽️","🖼️","🪞","🏳️","➿","🧺","🧻","🪟","🚪","🛋️","🛏️","🚽","🚿","❄️","🌡️","🔌","🔋","🧯","🪜","🛒","📦","🧊","🍳","🥘","🍲","🧁","🎂","🌸","🌹","🌿","🕺"];
@@ -5959,7 +5959,7 @@ function AppInner() {
   const filtered = useMemo(() => orders
     .filter(o => {
       if (view === "devisEnAttente") return o.status === "Brouillon" || o.status === "Devis" || o.status === "Non confirmé";
-      if (filterStatus === "Toutes" && (o.status === "Brouillon" || o.status === "Devis" || o.status === "Non confirmé")) return false; // masqués par défaut, voir "Devis en attente"
+      if (filterStatus === "Toutes" && (o.status === "Brouillon" || o.status === "Devis" || o.status === "Non confirmé" || o.status === "Expiré")) return false; // masqués par défaut, voir "Devis en attente" / filtre "Expiré"
       return (filterStatus === "Toutes" || o.status === filterStatus);
     })
     .filter(o => ((o.clientName || "").toLowerCase().includes(searchQ.toLowerCase()) || (o.id || "").toLowerCase().includes(searchQ.toLowerCase())) && (quickFilter !== "aPreparer" || isAPreparer(o)))
@@ -6128,6 +6128,7 @@ function AppInner() {
                     <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setQuickFilter(null); }} style={{ width: "100%", minWidth: 0, padding: "10px 12px", borderRadius: 10, border: filterStatus !== "Toutes" ? "2px solid #1a1a2e" : "1.5px solid #e5e7eb", background: "#fff", color: "#1a1a2e", fontWeight: 700, fontSize: 16, fontFamily: "inherit", cursor: "pointer", boxSizing: "border-box" }}>
                       <option value="Toutes">Toutes les commandes (hors devis/brouillons)</option>
                       {STATUS_FLOW.map(s => <option key={s} value={s}>{s}</option>)}
+                      <option value="Expiré">Expiré (devis/brouillon non confirmé, date passée)</option>
                     </select>
                   )}
                 </div>

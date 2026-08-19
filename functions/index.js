@@ -672,6 +672,45 @@ exports.cleanupOldPhotos = onSchedule(
 );
 
 // ───────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────
+// 5bis) Archivage automatique des devis/brouillons dont la date d'événement est dépassée
+//    Tourne une fois par jour à 3h du matin. Ne supprime RIEN — passe simplement le statut à
+//    "Expiré" pour sortir ces devis de la vue "Devis en attente" (qui finirait sinon par
+//    s'encombrer indéfiniment de demandes jamais confirmées et déjà passées), tout en gardant
+//    la fiche client ET l'historique complet consultables : les commandes réellement validées
+//    (Confirmée/Préparée/Chez le client/Clôturée) ne sont JAMAIS concernées par cet archivage,
+//    seuls les statuts "Non confirmé", "Devis" et "Brouillon" le sont.
+// ───────────────────────────────────────────────────────────
+const UNCONFIRMED_STATUSES = ["Non confirmé", "Devis", "Brouillon"];
+
+exports.archiveExpiredQuotes = onSchedule(
+  { schedule: "0 3 * * *", region: SCHEDULER_REGION, timeZone: "Europe/Paris" },
+  async () => {
+    const orders = await getAllOrders();
+    const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    // La date du jour même de l'événement reste visible toute la journée — seule une date
+    // STRICTEMENT dépassée (hier ou avant) déclenche l'archivage, pour ne jamais faire
+    // disparaître un devis alors que l'événement n'est pas encore terminé.
+    const toArchive = orders.filter(o =>
+      UNCONFIRMED_STATUSES.includes(o.status) && o.deliveryDate && o.deliveryDate < todayStr
+    );
+    if (!toArchive.length) { logger.info("Archivage devis expirés : rien à archiver aujourd'hui."); return; }
+
+    for (let i = 0; i < toArchive.length; i += 400) {
+      const batch = db.batch();
+      toArchive.slice(i, i + 400).forEach(o => {
+        // previousStatus conserve la nature d'origine (Devis / Brouillon / Non confirmé) pour
+        // l'historique — utile pour distinguer plus tard "demande jamais traitée" de "brouillon
+        // jamais terminé", sans avoir à deviner après coup.
+        batch.set(db.collection("orders").doc(o.id), { ...o, status: "Expiré", previousStatus: o.status, archivedAt: new Date().toISOString() });
+      });
+      await batch.commit();
+    }
+    logger.info(`Archivage devis expirés : ${toArchive.length} devis/brouillon(s) passé(s) en statut "Expiré".`);
+  }
+);
+
+// ───────────────────────────────────────────────────────────
 // 6) Sauvegarde automatique quotidienne (2h du matin, heure de Paris)
 //    Sauvegarde complète : orders, clients, stock, expenses, settings.
 //    Conservation des 7 derniers jours (les plus anciennes sont supprimées).

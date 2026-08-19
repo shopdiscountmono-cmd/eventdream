@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v4.1.2 — Sous-total articles sur la fiche detail + devis.html : livraison limitee a l'Ile-de-France (17/08/2026)";
+const APP_VERSION = "v4.1.3 — Fix notifications perdues apres mise a jour : rafraichissement silencieux du token au lieu d'un doublon manuel (17/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -4670,21 +4670,26 @@ function SettingsView({ settings, setSettings, driveToken, setDriveToken, driveC
   const [notifStatus, setNotifStatus] = useState("idle"); // idle | loading | ok | err | denied
   const [openNotifSections, setOpenNotifSections] = useState(new Set()); // sections de notif dépliées
   const toggleNotifSection = (key) => setOpenNotifSections(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
-  const myToken = useMemo(() => {
+  const myToken = (() => {
     try { return localStorage.getItem("eventdream_fcm_token") || null; } catch { return null; }
-  }, []);
+  })();
   const isThisDeviceRegistered = !!myToken && Array.isArray(pushTokens) && pushTokens.some(t => t.token === myToken);
   const activateNotifications = async () => {
     setNotifStatus("loading");
     try {
+      const oldToken = myToken;
       const token = await registerPushNotifications();
       if (!token) {
         setNotifStatus(Notification && Notification.permission === "denied" ? "denied" : "err");
         return;
       }
       try { localStorage.setItem("eventdream_fcm_token", token); } catch {}
+      // Remplace l'ancien token de CET appareil au lieu de simplement en ajouter un nouveau —
+      // sinon un appareil qui obtient un nouveau token (ça arrive, notamment après une mise à
+      // jour de l'app qui change le service worker) fait artificiellement grimper le nombre
+      // d'"appareils enregistrés" au lieu de rester stable.
       setPushTokens(prev => {
-        const list = Array.isArray(prev) ? prev : [];
+        const list = (Array.isArray(prev) ? prev : []).filter(t => t.token !== oldToken);
         if (list.some(t => t.token === token)) return list;
         return [...list, { token, addedAt: new Date().toISOString(), userEmail: auth.currentUser ? auth.currentUser.email : "" }];
       });
@@ -5529,6 +5534,32 @@ function AppInner() {
   const [expenseCategories, setExpenseCategories] = useFirestoreState("expenseCategories", EXPENSE_CATEGORIES);
   const [recurringExpenses, setRecurringExpenses] = useFirestoreState("recurringExpenses", []);
   const [pushTokens, setPushTokens] = useFirestoreState("pushTokens", []);
+  // ───────────────────────────────────────────────────────────
+  // Rafraîchissement silencieux du token de notification à chaque ouverture de l'app.
+  // BUG CORRIGÉ : le token n'était jusqu'ici renouvelé QUE par un clic manuel sur "Activer les
+  // notifications". Or Firebase peut faire tourner ce token en coulisses (notamment après une
+  // mise à jour de l'app, qui change le service worker) — sans ce rafraîchissement automatique,
+  // les notifications s'arrêtaient silencieusement jusqu'à ce que quelqu'un remarque et reclique
+  // manuellement, ce qui en plus ajoutait un doublon au lieu de remplacer l'ancien token.
+  // Ne redemande JAMAIS la permission ici (uniquement si déjà accordée) : aucune interruption
+  // pour l'utilisateur, ça tourne en tâche de fond.
+  useEffect(() => {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    (async () => {
+      try {
+        const oldToken = localStorage.getItem("eventdream_fcm_token");
+        const newToken = await registerPushNotifications();
+        if (!newToken || newToken === oldToken) return; // déjà à jour, rien à faire
+        localStorage.setItem("eventdream_fcm_token", newToken);
+        setPushTokens(prev => {
+          const list = (Array.isArray(prev) ? prev : []).filter(t => t.token !== oldToken);
+          if (list.some(t => t.token === newToken)) return list;
+          return [...list, { token: newToken, addedAt: new Date().toISOString(), userEmail: auth.currentUser ? auth.currentUser.email : "" }];
+        });
+      } catch (e) { console.error("Rafraîchissement silencieux du token push impossible :", e); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [userRoles, setUserRoles] = useFirestoreState("userRoles", {});
   // NOTE : les migrations automatiques "kits par défaut" et "articles Décoration" (qui ajoutaient
   // ces articles au stock s'ils étaient absents) ont été RETIRÉES après la v3.19. Elles avaient déjà

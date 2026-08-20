@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v4.3.0 — Systeme de Pages generique (editeur par blocs, page.html, blog) + fix Expire dans Livraisons/stock + rename Livreur->Livraisons + fix suppression depense (18/08/2026)";
+const APP_VERSION = "v4.3.1 — Fusion Site internet + Pages en une seule section unifiee (Accueil epinglee, plus logique) (20/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -1369,6 +1369,82 @@ const slugify = (s) => (s || "").toLowerCase().trim()
 
 // Pages de départ proposées en un clic — contenu réel tiré du catalogue officiel (SIRET/TVA),
 // prêtes à être ajustées ensuite depuis l'éditeur.
+// Wrapper unique de l'onglet "Site internet" : une seule liste, avec l'Accueil toujours épinglé
+// en premier (édité via SiteInternetView, son éditeur dédié plus riche) et les autres pages en
+// dessous (éditées via PagesView, l'éditeur par blocs générique). Évite d'avoir deux entrées de
+// menu séparées pour ce qui est, du point de vue de l'utilisateur, une seule et même chose :
+// "gérer mon site".
+function SiteManagerView({ landing, setLanding, pages, setPages, settings }) {
+  const [sub, setSub] = useState(null); // null = liste, "accueil" = éditeur accueil, "__new__" = nouvelle page, ou l'id d'une page existante
+
+  const seedStarterPages = () => {
+    const existing = new Set((pages || []).map(p => p.id));
+    const toAdd = starterPages().filter(p => !existing.has(p.id));
+    if (!toAdd.length) { alert("Les pages de base existent déjà."); return; }
+    setPages(prev => [...(prev || []), ...toAdd]);
+  };
+
+  const savePage = (toSave, isNew) => {
+    if (isNew && (pages || []).some(p => p.id === toSave.id)) { alert("Une page avec cette adresse existe déjà."); return; }
+    setPages(prev => [...(prev || []).filter(p => p.id !== toSave.id), toSave]);
+    setSub(null);
+  };
+  const deletePage = (id) => { setPages(prev => (prev || []).filter(p => p.id !== id)); setSub(null); };
+
+  if (sub === "accueil") {
+    return (
+      <div>
+        <div style={{ padding: "20px 20px 0", maxWidth: 640, margin: "0 auto" }}>
+          <Btn variant="secondary" size="sm" onClick={() => setSub(null)}>← Retour au site</Btn>
+        </div>
+        <SiteInternetView landing={landing} setLanding={setLanding} />
+      </div>
+    );
+  }
+  if (sub === "__new__") {
+    return <PagesView page={{ id: "", title: "", status: "draft", showInNav: false, isBlogPost: false, blogDate: new Date().toISOString().slice(0, 10), blocks: [] }} isNew onSave={savePage} onDelete={deletePage} onClose={() => setSub(null)} />;
+  }
+  if (sub) {
+    const p = (pages || []).find(x => x.id === sub);
+    if (p) return <PagesView page={p} isNew={false} onSave={savePage} onDelete={deletePage} onClose={() => setSub(null)} />;
+  }
+
+  // ── Liste unifiée ──
+  const list = [...(pages || [])].sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  return (
+    <div style={{ padding: 20, maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: "#FBF6EF", border: "1px solid #E4D8C8", borderRadius: 12, padding: 14, fontSize: 13, color: "#3A2E26" }}>
+        🌐 Toutes les pages de ton site, au même endroit. L'accueil (première impression de tes clients) est épinglée en haut ; ajoute autant de pages annexes que tu veux en dessous.
+      </div>
+      <div onClick={() => setSub("accueil")} style={{ background: "#3A2E26", color: "#FBF6EF", borderRadius: 14, padding: 16, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>🏠 Accueil</div>
+          <div style={{ fontSize: 11, opacity: 0.7, fontFamily: "monospace" }}>/accueil.html</div>
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 700, background: "#B8935A", color: "#3A2E26", borderRadius: 6, padding: "2px 8px" }}>Épinglée</span>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <Btn variant="primary" onClick={() => setSub("__new__")} style={{ flex: 1 }}>+ Nouvelle page</Btn>
+        <Btn variant="secondary" onClick={seedStarterPages}>Créer les pages de base</Btn>
+      </div>
+      {list.length === 0 && <div style={{ textAlign: "center", color: "#999", fontSize: 13, padding: 24 }}>Aucune page annexe pour l'instant.</div>}
+      {list.map(p => (
+        <div key={p.id} onClick={() => setSub(p.id)} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>{p.title || "(sans titre)"}</div>
+            <div style={{ fontSize: 11, color: "#999", fontFamily: "monospace" }}>/page.html?p={p.id}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {p.isBlogPost && <span style={{ fontSize: 10, fontWeight: 700, background: "#eff6ff", color: "#1d4ed8", borderRadius: 6, padding: "2px 8px" }}>BLOG</span>}
+            <span style={{ fontSize: 10, fontWeight: 700, background: p.status === "published" ? "#dcfce7" : "#f3f4f6", color: p.status === "published" ? "#065f46" : "#6b7280", borderRadius: 6, padding: "2px 8px" }}>{p.status === "published" ? "Publiée" : "Brouillon"}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function starterPages() {
   return [
     {
@@ -1401,69 +1477,48 @@ function starterPages() {
   ];
 }
 
-function PagesView({ pages, setPages, settings }) {
+function PagesView({ page, isNew, onSave, onDelete, onClose }) {
   const [askConfirm, ConfirmUI] = useConfirm();
-  const [editing, setEditing] = useState(null); // page en cours d'édition (objet local), null = liste
-  const [isNew, setIsNew] = useState(false);
-
-  const openNew = () => { setIsNew(true); setEditing({ id: "", title: "", status: "draft", showInNav: false, isBlogPost: false, blogDate: new Date().toISOString().slice(0, 10), blocks: [] }); };
-  const openEdit = (p) => { setIsNew(false); setEditing(JSON.parse(JSON.stringify(p))); };
-  const closeEditor = () => setEditing(null);
-
-  const seedStarterPages = () => {
-    const existing = new Set((pages || []).map(p => p.id));
-    const toAdd = starterPages().filter(p => !existing.has(p.id));
-    if (!toAdd.length) { alert("Les pages de base existent déjà."); return; }
-    setPages(prev => [...(prev || []), ...toAdd]);
-  };
+  const [editing, setEditing] = useState(() => JSON.parse(JSON.stringify(page)));
 
   const savePage = () => {
     const slug = isNew ? slugify(editing.title) : editing.id;
     if (!slug) { alert("Titre requis pour générer l'adresse de la page."); return; }
-    if (isNew && (pages || []).some(p => p.id === slug)) { alert("Une page avec cette adresse existe déjà."); return; }
-    const toSave = { ...editing, id: slug, updatedAt: new Date().toISOString() };
-    setPages(prev => {
-      const list = (prev || []).filter(p => p.id !== slug);
-      return [...list, toSave];
-    });
-    closeEditor();
+    onSave({ ...editing, id: slug, updatedAt: new Date().toISOString() }, isNew);
   };
 
-  const deletePage = async (id) => {
+  const deletePage = async () => {
     if (!(await askConfirm("Supprimer définitivement cette page ?"))) return;
-    setPages(prev => (prev || []).filter(p => p.id !== id));
-    closeEditor();
+    onDelete(editing.id);
   };
 
-  // ── Éditeur d'une page ──
-  if (editing) {
-    const set = (k, v) => setEditing(prev => ({ ...prev, [k]: v }));
-    const setBlock = (i, patch) => setEditing(prev => ({ ...prev, blocks: prev.blocks.map((b, idx) => idx === i ? { ...b, ...patch } : b) }));
-    const addBlock = (type) => setEditing(prev => ({ ...prev, blocks: [...prev.blocks, BLOCK_TYPES[type].make()] }));
-    const removeBlock = (i) => setEditing(prev => ({ ...prev, blocks: prev.blocks.filter((_, idx) => idx !== i) }));
-    const moveBlock = (i, dir) => setEditing(prev => {
-      const blocks = [...prev.blocks];
-      const j = i + dir;
-      if (j < 0 || j >= blocks.length) return prev;
-      [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
-      return { ...prev, blocks };
-    });
+  const set = (k, v) => setEditing(prev => ({ ...prev, [k]: v }));
+  const setBlock = (i, patch) => setEditing(prev => ({ ...prev, blocks: prev.blocks.map((b, idx) => idx === i ? { ...b, ...patch } : b) }));
+  const addBlock = (type) => setEditing(prev => ({ ...prev, blocks: [...prev.blocks, BLOCK_TYPES[type].make()] }));
+  const removeBlock = (i) => setEditing(prev => ({ ...prev, blocks: prev.blocks.filter((_, idx) => idx !== i) }));
+  const moveBlock = (i, dir) => setEditing(prev => {
+    const blocks = [...prev.blocks];
+    const j = i + dir;
+    if (j < 0 || j >= blocks.length) return prev;
+    [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
+    return { ...prev, blocks };
+  });
 
-    return (
-      <div style={{ padding: 20, maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Btn variant="secondary" size="sm" onClick={closeEditor}>← Retour aux pages</Btn>
-          {!isNew && <Btn variant="danger" size="sm" onClick={() => deletePage(editing.id)}>🗑️ Supprimer</Btn>}
+  return (
+    <div style={{ padding: 20, maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Btn variant="secondary" size="sm" onClick={onClose}>← Retour au site</Btn>
+        {!isNew && <Btn variant="danger" size="sm" onClick={deletePage}>🗑️ Supprimer</Btn>}
+      </div>
+
+      <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Titre de la page</div>
+        <input value={editing.title} onChange={e => set("title", e.target.value)} placeholder="À propos" style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 15, fontFamily: "inherit", marginBottom: 12 }} />
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Adresse (URL)</div>
+        <div style={{ fontSize: 13, color: "#666", background: "#f8f9fa", borderRadius: 8, padding: "8px 12px", marginBottom: 4 }}>
+          /page.html?p={isNew ? (slugify(editing.title) || "…") : editing.id}
         </div>
-
-        <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Titre de la page</div>
-          <input value={editing.title} onChange={e => set("title", e.target.value)} placeholder="À propos" style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 15, fontFamily: "inherit", marginBottom: 12 }} />
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Adresse (URL)</div>
-          <div style={{ fontSize: 13, color: "#666", background: "#f8f9fa", borderRadius: 8, padding: "8px 12px", marginBottom: 4 }}>
-            /page.html?p={isNew ? (slugify(editing.title) || "…") : editing.id}
-          </div>
-          {!isNew && <div style={{ fontSize: 11, color: "#c2410c", marginBottom: 8 }}>⚠️ L'adresse ne change pas après création (pour ne jamais casser un lien déjà partagé).</div>}
+        {!isNew && <div style={{ fontSize: 11, color: "#c2410c", marginBottom: 8 }}>⚠️ L'adresse ne change pas après création (pour ne jamais casser un lien déjà partagé).</div>}
 
           <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
@@ -1572,34 +1627,6 @@ function PagesView({ pages, setPages, settings }) {
         {ConfirmUI}
       </div>
     );
-  }
-
-  // ── Liste des pages ──
-  const list = [...(pages || [])].sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-  return (
-    <div style={{ padding: 20, maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ background: "#FBF6EF", border: "1px solid #E4D8C8", borderRadius: 12, padding: 14, fontSize: 13, color: "#3A2E26" }}>
-        🗂️ Crée et gère ici toutes les pages annexes de ton site (à propos, mentions légales, CGV, blog...). L'accueil se gère toujours dans l'onglet "Site internet".
-      </div>
-      <div style={{ display: "flex", gap: 10 }}>
-        <Btn variant="primary" onClick={openNew} style={{ flex: 1 }}>+ Nouvelle page</Btn>
-        <Btn variant="secondary" onClick={seedStarterPages}>Créer les pages de base</Btn>
-      </div>
-      {list.length === 0 && <div style={{ textAlign: "center", color: "#999", fontSize: 13, padding: 24 }}>Aucune page pour l'instant.</div>}
-      {list.map(p => (
-        <div key={p.id} onClick={() => openEdit(p)} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>{p.title || "(sans titre)"}</div>
-            <div style={{ fontSize: 11, color: "#999", fontFamily: "monospace" }}>/page.html?p={p.id}</div>
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {p.isBlogPost && <span style={{ fontSize: 10, fontWeight: 700, background: "#eff6ff", color: "#1d4ed8", borderRadius: 6, padding: "2px 8px" }}>BLOG</span>}
-            <span style={{ fontSize: 10, fontWeight: 700, background: p.status === "published" ? "#dcfce7" : "#f3f4f6", color: p.status === "published" ? "#065f46" : "#6b7280", borderRadius: 6, padding: "2px 8px" }}>{p.status === "published" ? "Publiée" : "Brouillon"}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function EtageBaremeFields({ cfg, onChange }) {
@@ -6262,7 +6289,6 @@ function AppInner() {
     { id: "retours", label: "Retours", icon: "↩️", badge: retourCount },
     { id: "settings", label: "Réglages", icon: "⚙️" },
     { id: "site", label: "Site internet", icon: "🌐" },
-    { id: "pages", label: "Pages", icon: "🗂️" },
   ];
   // Rôle de l'utilisateur connecté : "livreur" = accès restreint à Calendrier/Livreur/Retours/Réglages.
   // Par défaut (email non listé dans userRoles), tout le monde est "admin" (accès complet),
@@ -6358,8 +6384,7 @@ function AppInner() {
           {view === "delivery" && <DeliveryInterface orders={orders} stock={stock} settings={settings} onShare={sharePdf} onConfirmDelivery={confirmDelivery} onRetour={saveRetour} onEncaisser={(o) => { setSoldeOrder(o); setSoldeMoyenSel("especes"); }} onDeletePhoto={deleteOrderPhoto} />}
           {view === "retours" && <RetoursView orders={orders} stock={stock} settings={settings} onRetour={saveRetour} />}
           {view === "settings" && <SettingsView settings={settings} setSettings={setSettings} driveToken={driveToken} setDriveToken={setDriveToken} driveClientId={driveClientId} setDriveClientId={setDriveClientId} orders={orders} setOrders={setOrders} clients={clients} setClients={setClients} stock={stock} expenses={expenses} pushTokens={pushTokens} setPushTokens={setPushTokens} userRoles={userRoles} setUserRoles={setUserRoles} myRole={myRole} />}
-          {view === "site" && <SiteInternetView landing={landing} setLanding={setLanding} />}
-          {view === "pages" && <PagesView pages={pages} setPages={setPages} settings={settings} />}
+          {view === "site" && <SiteManagerView landing={landing} setLanding={setLanding} pages={pages} setPages={setPages} settings={settings} />}
 
           {view === "clients" && (
             <Card>

@@ -120,10 +120,10 @@
 <div id="app"><div style="text-align:center;padding:80px 20px;color:#B8A99A">⏳</div></div>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import{getFirestore,doc,getDoc}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import{getFirestore,doc,getDoc,collection,getDocs}from"https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 const cfg={apiKey:"AIzaSyD4WXB0wFeDtakmUC2uUGEeDutKlBuG8cU",authDomain:"eventdream-app.firebaseapp.com",projectId:"eventdream-app",storageBucket:"eventdream-app.firebasestorage.app",messagingSenderId:"881676818782",appId:"1:881676818782:web:77b339331ef984d25fd7cf"};
 const db=getFirestore(initializeApp(cfg));
-let lang="fr",landing={},settings={};
+let lang="fr",landing={},settings={},sitePages=[];
 
 // ─── Informations réelles et vérifiées (site officiel eventdream.fr + fiche Google) ───
 // Servent de contenu par défaut tant que l'onglet "Site internet" de l'app n'a rien personnalisé
@@ -192,6 +192,12 @@ async function loadData(){
     console.warn("Chargement du contenu personnalisé impossible, affichage du contenu par défaut :",e.message);
     landing={};settings={};
   }
+  // Pages annexes (à propos, mentions légales, CGV, blog...) pour le pied de page — best-effort :
+  // si ça échoue, le footer est simplement absent, ça ne bloque jamais le reste de la page.
+  try{
+    const pagesSnap=await getDocs(collection(db,"pages"));
+    sitePages=pagesSnap.docs.map(d=>({...d.data(),id:d.id})).filter(p=>p.showInNav&&p.status==="published");
+  }catch(e){ sitePages=[]; }
   render();
 }
 
@@ -313,7 +319,7 @@ function render(){
     ${infoSection}
     ${finalCta}
     ${waBannerHtml()}
-    <div class="footer">EventDream — ${new Date().getFullYear()}</div>
+    <div class="footer">${sitePages.length?`<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px 16px;margin-bottom:12px">${sitePages.map(p=>`<a href="/page.html?p=${encodeURIComponent(p.id)}" style="font-size:12px;color:#8A7A6D;text-decoration:none;font-weight:600">${escapeHtml(p.title)}</a>`).join("")}</div>`:""}EventDream — ${new Date().getFullYear()}</div>
   </div>`;
   if(typeof fbq==="function"){fbq('track','PageView');}
   initReveal();

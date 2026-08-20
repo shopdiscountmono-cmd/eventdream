@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v4.2.0 — Archivage auto des devis/brouillons dont la date est passee (statut Expire, historique client conserve) (17/08/2026)";
+const APP_VERSION = "v4.3.0 — Systeme de Pages generique (editeur par blocs, page.html, blog) + fix Expire dans Livraisons/stock + rename Livreur->Livraisons + fix suppression depense (18/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -627,7 +627,7 @@ function stockShortage(form, allOrders, stock) {
   if (!myPeriod) return [];
   const occupying = (allOrders || []).filter(o =>
     o.id !== form.id &&
-    !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(o.status) &&
+    !["Brouillon", "Devis", "Non confirmé", "Expiré", "Clôturée"].includes(o.status) &&
     periodsOverlap(orderPeriod(o), myPeriod)
   );
   // Besoins de la commande courante, kits explosés en composants
@@ -1346,6 +1346,258 @@ function SiteInternetView({ landing, setLanding }) {
       </div>
 
       <Btn variant="primary" onClick={save} style={{ padding: "14px 0", fontSize: 15 }}>{saved ? "✅ Enregistré !" : "💾 Enregistrer"}</Btn>
+    </div>
+  );
+}
+
+// ─── Pages génériques (page.html) : à propos, mentions légales, CGV, blog, etc. ──────────────
+// Chaque page se construit en empilant des blocs réutilisables (Titre+texte, Galerie, Avis,
+// Vidéo, Bouton d'action). Publiées ou en brouillon, avec ou sans lien dans le pied de page du
+// site public — le tout géré ici, sans jamais toucher au code.
+const BLOCK_TYPES = {
+  hero: { label: "🖼️ Titre + image", make: () => ({ type: "hero", title: "", subtitle: "", image: "" }) },
+  text: { label: "📝 Texte", make: () => ({ type: "text", heading: "", body: "" }) },
+  gallery: { label: "📸 Galerie photos", make: () => ({ type: "gallery", images: [] }) },
+  testimonials: { label: "💬 Avis clients", make: () => ({ type: "testimonials", items: [] }) },
+  video: { label: "🎬 Vidéo", make: () => ({ type: "video", url: "" }) },
+  cta: { label: "🔘 Bouton d'action", make: () => ({ type: "cta", text: "", buttonText: "", buttonLink: "/devis.html" }) },
+};
+
+const slugify = (s) => (s || "").toLowerCase().trim()
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // retire les accents
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+// Pages de départ proposées en un clic — contenu réel tiré du catalogue officiel (SIRET/TVA),
+// prêtes à être ajustées ensuite depuis l'éditeur.
+function starterPages() {
+  return [
+    {
+      id: "a-propos", title: "À propos", status: "published", showInNav: true, isBlogPost: false,
+      blocks: [
+        { type: "hero", title: "À propos d'EventDream", subtitle: "Location de mobilier et décoration événementielle en Île-de-France", image: "" },
+        { type: "text", heading: "Notre histoire", body: "EventDream accompagne les particuliers et professionnels d'Île-de-France dans l'organisation de leurs événements : mariages, henné, anniversaires, baptêmes, cérémonies religieuses.\n\nDepuis notre entrepôt de Villejuif (94), nous proposons un large choix de mobilier, vaisselle et décoration, avec ou sans installation, pour transformer chaque réception en un moment inoubliable." },
+        { type: "cta", text: "Envie de composer votre devis ?", buttonText: "Demander un devis", buttonLink: "/devis.html" },
+      ],
+    },
+    {
+      id: "mentions-legales", title: "Mentions légales", status: "published", showInNav: true, isBlogPost: false,
+      blocks: [
+        { type: "text", heading: "Éditeur du site", body: "EventDream\n98 Rue Jean Jaurès, 94800 Villejuif\nTéléphone : 06 52 36 08 49\nSIRET : 977 569 078 00016\nTVA intracommunautaire : FR31977569078" },
+        { type: "text", heading: "Hébergement", body: "Ce site est hébergé par Vercel Inc., 340 S Lemon Ave #4133, Walnut, CA 91789, États-Unis." },
+        { type: "text", heading: "Propriété intellectuelle", body: "L'ensemble des contenus (textes, photos, logo) présents sur ce site est la propriété d'EventDream, sauf mention contraire. Toute reproduction sans autorisation préalable est interdite." },
+      ],
+    },
+    {
+      id: "cgv", title: "Conditions Générales de Vente", status: "published", showInNav: true, isBlogPost: false,
+      blocks: [
+        { type: "text", heading: "Article 1 — Objet", body: "Les présentes conditions générales de vente régissent la location de matériel événementiel et les prestations de décoration proposées par EventDream." },
+        { type: "text", heading: "Article 2 — Réservation et acompte", body: "Toute réservation devient définitive après réception d'un acompte (30% ou 100% du montant total, au choix du client) et confirmation écrite par EventDream. Le solde est à régler le jour de la livraison ou du retrait." },
+        { type: "text", heading: "Article 3 — Caution", body: "Une caution est demandée le jour de la livraison ou du retrait, dont le montant dépend du matériel loué. Elle est restituée à la fin de la location, déduction faite d'éventuelles casses ou pertes constatées." },
+        { type: "text", heading: "Article 4 — Annulation", body: "Toute annulation doit être signalée par écrit. Les modalités de remboursement de l'acompte sont à convenir avec EventDream selon le délai avant la date de l'événement." },
+        { type: "text", heading: "Article 5 — Responsabilité", body: "Le client est responsable du matériel loué pendant toute la durée de la location. Toute casse, perte ou dégradation sera facturée sur la base du prix de remplacement." },
+      ],
+    },
+    { id: "blog", title: "Blog", status: "published", showInNav: true, isBlogPost: false, blocks: [] },
+  ];
+}
+
+function PagesView({ pages, setPages, settings }) {
+  const [askConfirm, ConfirmUI] = useConfirm();
+  const [editing, setEditing] = useState(null); // page en cours d'édition (objet local), null = liste
+  const [isNew, setIsNew] = useState(false);
+
+  const openNew = () => { setIsNew(true); setEditing({ id: "", title: "", status: "draft", showInNav: false, isBlogPost: false, blogDate: new Date().toISOString().slice(0, 10), blocks: [] }); };
+  const openEdit = (p) => { setIsNew(false); setEditing(JSON.parse(JSON.stringify(p))); };
+  const closeEditor = () => setEditing(null);
+
+  const seedStarterPages = () => {
+    const existing = new Set((pages || []).map(p => p.id));
+    const toAdd = starterPages().filter(p => !existing.has(p.id));
+    if (!toAdd.length) { alert("Les pages de base existent déjà."); return; }
+    setPages(prev => [...(prev || []), ...toAdd]);
+  };
+
+  const savePage = () => {
+    const slug = isNew ? slugify(editing.title) : editing.id;
+    if (!slug) { alert("Titre requis pour générer l'adresse de la page."); return; }
+    if (isNew && (pages || []).some(p => p.id === slug)) { alert("Une page avec cette adresse existe déjà."); return; }
+    const toSave = { ...editing, id: slug, updatedAt: new Date().toISOString() };
+    setPages(prev => {
+      const list = (prev || []).filter(p => p.id !== slug);
+      return [...list, toSave];
+    });
+    closeEditor();
+  };
+
+  const deletePage = async (id) => {
+    if (!(await askConfirm("Supprimer définitivement cette page ?"))) return;
+    setPages(prev => (prev || []).filter(p => p.id !== id));
+    closeEditor();
+  };
+
+  // ── Éditeur d'une page ──
+  if (editing) {
+    const set = (k, v) => setEditing(prev => ({ ...prev, [k]: v }));
+    const setBlock = (i, patch) => setEditing(prev => ({ ...prev, blocks: prev.blocks.map((b, idx) => idx === i ? { ...b, ...patch } : b) }));
+    const addBlock = (type) => setEditing(prev => ({ ...prev, blocks: [...prev.blocks, BLOCK_TYPES[type].make()] }));
+    const removeBlock = (i) => setEditing(prev => ({ ...prev, blocks: prev.blocks.filter((_, idx) => idx !== i) }));
+    const moveBlock = (i, dir) => setEditing(prev => {
+      const blocks = [...prev.blocks];
+      const j = i + dir;
+      if (j < 0 || j >= blocks.length) return prev;
+      [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
+      return { ...prev, blocks };
+    });
+
+    return (
+      <div style={{ padding: 20, maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Btn variant="secondary" size="sm" onClick={closeEditor}>← Retour aux pages</Btn>
+          {!isNew && <Btn variant="danger" size="sm" onClick={() => deletePage(editing.id)}>🗑️ Supprimer</Btn>}
+        </div>
+
+        <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Titre de la page</div>
+          <input value={editing.title} onChange={e => set("title", e.target.value)} placeholder="À propos" style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 15, fontFamily: "inherit", marginBottom: 12 }} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Adresse (URL)</div>
+          <div style={{ fontSize: 13, color: "#666", background: "#f8f9fa", borderRadius: 8, padding: "8px 12px", marginBottom: 4 }}>
+            /page.html?p={isNew ? (slugify(editing.title) || "…") : editing.id}
+          </div>
+          {!isNew && <div style={{ fontSize: 11, color: "#c2410c", marginBottom: 8 }}>⚠️ L'adresse ne change pas après création (pour ne jamais casser un lien déjà partagé).</div>}
+
+          <div style={{ display: "flex", gap: 16, marginTop: 12, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={editing.status === "published"} onChange={e => set("status", e.target.checked ? "published" : "draft")} />
+              Publiée (visible par les visiteurs)
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!editing.showInNav} onChange={e => set("showInNav", e.target.checked)} />
+              Lien dans le pied de page
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!editing.isBlogPost} onChange={e => set("isBlogPost", e.target.checked)} />
+              Article de blog
+            </label>
+          </div>
+          {editing.isBlogPost && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Date de publication</div>
+              <input type="date" value={editing.blogDate || ""} onChange={e => set("blogDate", e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 14, fontFamily: "inherit" }} />
+            </div>
+          )}
+        </div>
+
+        <div style={{ fontWeight: 800, fontSize: 14 }}>📦 Contenu de la page</div>
+        {editing.blocks.map((b, i) => (
+          <div key={i} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{BLOCK_TYPES[b.type]?.label || b.type}</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button onClick={() => moveBlock(i, -1)} disabled={i === 0} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.3 : 1 }}>↑</button>
+                <button onClick={() => moveBlock(i, 1)} disabled={i === editing.blocks.length - 1} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", cursor: i === editing.blocks.length - 1 ? "default" : "pointer", opacity: i === editing.blocks.length - 1 ? 0.3 : 1 }}>↓</button>
+                <Btn variant="danger" size="sm" onClick={() => removeBlock(i)}>🗑️</Btn>
+              </div>
+            </div>
+
+            {b.type === "hero" && (<>
+              <Inp label="Titre" value={b.title} onChange={v => setBlock(i, { title: v })} />
+              <Inp label="Sous-titre" value={b.subtitle} onChange={v => setBlock(i, { subtitle: v })} />
+              {b.image && <img src={b.image} style={{ width: "100%", borderRadius: 10, marginBottom: 8, maxHeight: 140, objectFit: "cover" }} />}
+              <LandingImageUploadButton label={b.image ? "📷 Remplacer l'image" : "📷 Ajouter une image (optionnel)"} kind="page" onUploaded={url => setBlock(i, { image: url })} />
+            </>)}
+
+            {b.type === "text" && (<>
+              <Inp label="Titre de section (optionnel)" value={b.heading} onChange={v => setBlock(i, { heading: v })} />
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", marginBottom: 6 }}>Texte</div>
+              <textarea value={b.body} onChange={e => setBlock(i, { body: e.target.value })} rows={5} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 14, fontFamily: "inherit", resize: "vertical" }} />
+            </>)}
+
+            {b.type === "gallery" && (
+              <div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+                  {(b.images || []).map((img, gi) => (
+                    <div key={gi} style={{ display: "flex", gap: 8, alignItems: "center", background: "#fafafa", borderRadius: 8, padding: 8 }}>
+                      <img src={img.url} style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover" }} />
+                      <input value={img.caption || ""} onChange={e => setBlock(i, { images: b.images.map((x, xi) => xi === gi ? { ...x, caption: e.target.value } : x) })} placeholder="Légende (optionnel)" style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: "inherit" }} />
+                      <Btn variant="danger" size="sm" onClick={() => setBlock(i, { images: b.images.filter((_, xi) => xi !== gi) })}>🗑️</Btn>
+                    </div>
+                  ))}
+                </div>
+                <LandingImageUploadButton label="+ Ajouter une photo" kind="page" onUploaded={url => setBlock(i, { images: [...(b.images || []), { url, caption: "" }] })} />
+              </div>
+            )}
+
+            {b.type === "testimonials" && (
+              <div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
+                  {(b.items || []).map((tm, ti) => (
+                    <div key={ti} style={{ background: "#fafafa", borderRadius: 10, padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input value={tm.name || ""} onChange={e => setBlock(i, { items: b.items.map((x, xi) => xi === ti ? { ...x, name: e.target.value } : x) })} placeholder="Nom" style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: "inherit" }} />
+                        <select value={tm.rating || 5} onChange={e => setBlock(i, { items: b.items.map((x, xi) => xi === ti ? { ...x, rating: parseInt(e.target.value) } : x) })} style={{ padding: "6px 4px", borderRadius: 6, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: "inherit" }}>
+                          {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{"★".repeat(n)}</option>)}
+                        </select>
+                        <Btn variant="danger" size="sm" onClick={() => setBlock(i, { items: b.items.filter((_, xi) => xi !== ti) })}>🗑️</Btn>
+                      </div>
+                      <textarea value={tm.text || ""} onChange={e => setBlock(i, { items: b.items.map((x, xi) => xi === ti ? { ...x, text: e.target.value } : x) })} rows={2} placeholder="Avis" style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #e5e7eb", fontSize: 12, fontFamily: "inherit", resize: "vertical" }} />
+                    </div>
+                  ))}
+                </div>
+                <Btn variant="secondary" size="sm" onClick={() => setBlock(i, { items: [...(b.items || []), { name: "", text: "", rating: 5 }] })}>+ Ajouter un avis</Btn>
+              </div>
+            )}
+
+            {b.type === "video" && (
+              <Inp label="URL de la vidéo (téléversée depuis l'onglet Site internet ou lien direct)" value={b.url} onChange={v => setBlock(i, { url: v })} placeholder="https://..." />
+            )}
+
+            {b.type === "cta" && (<>
+              <Inp label="Texte d'accroche" value={b.text} onChange={v => setBlock(i, { text: v })} />
+              <Inp label="Texte du bouton" value={b.buttonText} onChange={v => setBlock(i, { buttonText: v })} />
+              <Inp label="Lien du bouton" value={b.buttonLink} onChange={v => setBlock(i, { buttonLink: v })} placeholder="/devis.html" />
+            </>)}
+          </div>
+        ))}
+
+        <div style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1.5px dashed #B8935A" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#666", marginBottom: 10 }}>+ Ajouter un bloc</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {Object.entries(BLOCK_TYPES).map(([key, def]) => (
+              <button key={key} onClick={() => addBlock(key)} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fafafa", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>{def.label}</button>
+            ))}
+          </div>
+        </div>
+
+        <Btn variant="primary" onClick={savePage} style={{ padding: "14px 0", fontSize: 15 }}>💾 Enregistrer la page</Btn>
+        {ConfirmUI}
+      </div>
+    );
+  }
+
+  // ── Liste des pages ──
+  const list = [...(pages || [])].sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  return (
+    <div style={{ padding: 20, maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: "#FBF6EF", border: "1px solid #E4D8C8", borderRadius: 12, padding: 14, fontSize: 13, color: "#3A2E26" }}>
+        🗂️ Crée et gère ici toutes les pages annexes de ton site (à propos, mentions légales, CGV, blog...). L'accueil se gère toujours dans l'onglet "Site internet".
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn variant="primary" onClick={openNew} style={{ flex: 1 }}>+ Nouvelle page</Btn>
+        <Btn variant="secondary" onClick={seedStarterPages}>Créer les pages de base</Btn>
+      </div>
+      {list.length === 0 && <div style={{ textAlign: "center", color: "#999", fontSize: 13, padding: 24 }}>Aucune page pour l'instant.</div>}
+      {list.map(p => (
+        <div key={p.id} onClick={() => openEdit(p)} style={{ background: "#fff", borderRadius: 14, padding: 16, border: "1px solid #eee", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>{p.title || "(sans titre)"}</div>
+            <div style={{ fontSize: 11, color: "#999", fontFamily: "monospace" }}>/page.html?p={p.id}</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {p.isBlogPost && <span style={{ fontSize: 10, fontWeight: 700, background: "#eff6ff", color: "#1d4ed8", borderRadius: 6, padding: "2px 8px" }}>BLOG</span>}
+            <span style={{ fontSize: 10, fontWeight: 700, background: p.status === "published" ? "#dcfce7" : "#f3f4f6", color: p.status === "published" ? "#065f46" : "#6b7280", borderRadius: 6, padding: "2px 8px" }}>{p.status === "published" ? "Publiée" : "Brouillon"}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -3917,6 +4169,7 @@ function ComptaView({ orders, expenses, setExpenses, stock, settings, expenseCat
           </div>
         </div>
       </Modal>
+      {ConfirmUI}
     </div>
   );
 }
@@ -4446,8 +4699,8 @@ function DeliveryInterface({ orders, stock, settings, onShare, onConfirmDelivery
     setCheckoutOrder(null);
   };
 
-  // Commandes confirmées uniquement (tout sauf brouillon, devis et clôturée)
-  const confirmed = orders.filter(o => !["Brouillon", "Devis", "Non confirmé", "Clôturée"].includes(o.status));
+  // Commandes confirmées uniquement (tout sauf brouillon, devis, non confirmé, expiré et clôturée)
+  const confirmed = orders.filter(o => !["Brouillon", "Devis", "Non confirmé", "Expiré", "Clôturée"].includes(o.status));
   // À traiter : phase livraison (les récupérations se gèrent dans le menu Retours).
   const aTraiter = confirmed.filter(o => o.phase !== "retour" && o.phase !== "termine")
     .sort((a, b) => (a.deliveryDate || "").localeCompare(b.deliveryDate || ""));
@@ -5499,6 +5752,7 @@ function AppInner() {
   // Multi-utilisateurs sans conflit, temps réel natif, écriture granulaire.
   const [orders, setOrders] = useCollectionState("orders");
   const [stock, setStock] = useCollectionState("stock");
+  const [pages, setPages] = useCollectionState("pages");
   const [expenses, setExpenses] = useCollectionState("expenses");
   const [clients, setClients] = useCollectionState("clients");
   // ───────────────────────────────────────────────────────────
@@ -5988,12 +6242,12 @@ function AppInner() {
   // Commandes à livrer : mode livraison, prêtes/confirmées, pas encore livrées
   const aLivrerCount = useMemo(() => orders.filter(o =>
     o.deliveryMode === "livraison" &&
-    !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée"].includes(o.status)
+    !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée", "Expiré"].includes(o.status)
   ).length, [orders]);
   // Commandes à retirer au local : mode retrait, prêtes/confirmées, pas encore récupérées
   const aRetirerCount = useMemo(() => orders.filter(o =>
     o.deliveryMode === "retrait" &&
-    !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée"].includes(o.status)
+    !["Brouillon", "Devis", "Non confirmé", "Chez le client", "Clôturée", "Expiré"].includes(o.status)
   ).length, [orders]);
 
   const navItems = [
@@ -6004,10 +6258,11 @@ function AppInner() {
     { id: "stock", label: "Stock", icon: "📦" },
     { id: "compta", label: "Comptabilité", icon: "💹" },
     { id: "calendar", label: "Calendrier", icon: "📅" },
-    { id: "delivery", label: "Livreur", icon: "🚚", badge: aLivrerCount + aRetirerCount },
+    { id: "delivery", label: "Livraisons", icon: "🚚", badge: aLivrerCount + aRetirerCount },
     { id: "retours", label: "Retours", icon: "↩️", badge: retourCount },
     { id: "settings", label: "Réglages", icon: "⚙️" },
     { id: "site", label: "Site internet", icon: "🌐" },
+    { id: "pages", label: "Pages", icon: "🗂️" },
   ];
   // Rôle de l'utilisateur connecté : "livreur" = accès restreint à Calendrier/Livreur/Retours/Réglages.
   // Par défaut (email non listé dans userRoles), tout le monde est "admin" (accès complet),
@@ -6104,6 +6359,7 @@ function AppInner() {
           {view === "retours" && <RetoursView orders={orders} stock={stock} settings={settings} onRetour={saveRetour} />}
           {view === "settings" && <SettingsView settings={settings} setSettings={setSettings} driveToken={driveToken} setDriveToken={setDriveToken} driveClientId={driveClientId} setDriveClientId={setDriveClientId} orders={orders} setOrders={setOrders} clients={clients} setClients={setClients} stock={stock} expenses={expenses} pushTokens={pushTokens} setPushTokens={setPushTokens} userRoles={userRoles} setUserRoles={setUserRoles} myRole={myRole} />}
           {view === "site" && <SiteInternetView landing={landing} setLanding={setLanding} />}
+          {view === "pages" && <PagesView pages={pages} setPages={setPages} settings={settings} />}
 
           {view === "clients" && (
             <Card>

@@ -875,7 +875,7 @@ exports.getStockAvailability = onCall({ region: REGION }, async (request) => {
   // Même filtre que côté app (App.jsx stockShortage) : un brouillon, un devis non confirmé ou
   // une commande clôturée ne bloque personne d'autre — seules les commandes réellement actives
   // occupent du stock.
-  const EXCLUDED_STATUSES = ["Brouillon", "Devis", "Non confirmé", "Clôturée"];
+  const EXCLUDED_STATUSES = ["Brouillon", "Devis", "Non confirmé", "Expiré", "Clôturée"];
   const orderPeriod = (o) => {
     const s = o.deliveryDate || o.returnDate || "";
     const e = o.returnDate || o.deliveryDate || "";

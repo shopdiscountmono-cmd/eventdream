@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v4.3.2 — Bouton WhatsApp/SMS pre-adresse (numero client auto) disponible pour toutes les commandes, plus seulement les non confirmees (20/08/2026)";
+const APP_VERSION = "v4.3.3 — Fix recherche client (Bibliotheque + suggestion en direct) : accents, casse, format telephone, fiches incompletes (20/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -315,6 +315,23 @@ const DEFAULT_LANDING = {
 
 const STATUS_FLOW = ["Non confirmé", "Confirmée", "Préparée", "Chez le client", "Clôturée"];
 const STATUS_COLORS = { "Non confirmé": "#f97316", "Brouillon": "#9ca3af", "Devis": "#f59e0b", "Confirmée": "#3b82f6", "Préparée": "#8b5cf6", "Chez le client": "#10b981", "Clôturée": "#6b7280", "Expiré": "#d1d5db" };
+
+// Recherche client robuste : insensible aux accents/casse (ex: "elodie" trouve "Élodie") et aux
+// mises en forme de numéro (ex: "0650123456" trouve "06 50 12 34 56"). Tolère aussi les fiches
+// client incomplètes (nom/téléphone/email manquants) sans jamais planter la recherche.
+const searchNorm = (s) => (s || "").toString().toLowerCase()
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // retire les accents
+const phoneNorm = (s) => (s || "").toString().replace(/[^0-9]/g, ""); // ne garde que les chiffres
+function clientMatchesQuery(c, rawQuery) {
+  const q = searchNorm(rawQuery);
+  if (!q) return true;
+  const qPhone = phoneNorm(rawQuery);
+  const phones = (c.phones && c.phones.length ? c.phones : (c.phone ? [c.phone] : []));
+  const nameMatch = searchNorm(c.name).includes(q);
+  const emailMatch = searchNorm(c.email).includes(q);
+  const phoneMatch = qPhone.length >= 2 && phones.some(p => phoneNorm(p).includes(qPhone));
+  return nameMatch || emailMatch || phoneMatch;
+}
 const EXPENSE_CATEGORIES = ["Achat matériel", "Maintenance / Réparation", "Carburant", "Loyer / Entrepôt", "Salaires", "Fournitures", "Assurance", "Autre"];
 const CAT_COLORS = { "Achat matériel": "#3b82f6", "Maintenance / Réparation": "#8b5cf6", "Carburant": "#f97316", "Loyer / Entrepôt": "#ef4444", "Salaires": "#10b981", "Fournitures": "#f59e0b", "Assurance": "#06b6d4", "Autre": "#6b7280" };
 const ICON_LIBRARY = ["🪑","💺","⭕","▬","🟦","🍽️","🍴","🔪","🥄","🍷","🥛","🍾","🥂","☕","🫖","🍶","🔥","⛺","🎪","🎉","🎈","🎀","🕯️","💡","🔦","🪩","🎤","🔊","🎸","📽️","🖼️","🪞","🏳️","➿","🧺","🧻","🪟","🚪","🛋️","🛏️","🚽","🚿","❄️","🌡️","🔌","🔋","🧯","🪜","🛒","📦","🧊","🍳","🥘","🍲","🧁","🎂","🌸","🌹","🌿","🕺"];
@@ -1828,7 +1845,7 @@ function ClientLibrary({ clients, setClients, onSelect, onClose, embedded, setti
   const clientPhones = (c) => c.phones && c.phones.length ? c.phones.filter(Boolean) : (c.phone ? [c.phone] : []);
   // Affiche toutes les adresses d'un client (rétrocompatible : ancien champ "address" ou nouveau tableau "addresses")
   const clientAddresses = (c) => c.addresses && c.addresses.length ? c.addresses.filter(Boolean) : (c.address ? [c.address] : []);
-  const filtered = clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || clientPhones(c).some(p => p.includes(search)) || (c.email || "").toLowerCase().includes(search.toLowerCase()));
+  const filtered = clients.filter(c => clientMatchesQuery(c, search));
   const resetForm = () => { setForm({ name: "", phones: [""], email: "", addresses: [""], notes: "" }); setEditId(null); setAddMode(false); };
   const startEdit = (client) => {
     setForm({
@@ -2142,11 +2159,7 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
   const [activeSuggestField, setActiveSuggestField] = useState(null); // "name" | "email" | "phone" | null
   const clientMatches = (query) => {
     if (!query || query.trim().length < 2) return [];
-    const q = query.trim().toLowerCase();
-    return (clients || []).filter(c => {
-      const phones = (c.phones && c.phones.length ? c.phones : (c.phone ? [c.phone] : []));
-      return (c.name || "").toLowerCase().includes(q) || phones.some(p => p.includes(q)) || (c.email || "").toLowerCase().includes(q);
-    }).slice(0, 6);
+    return (clients || []).filter(c => clientMatchesQuery(c, query)).slice(0, 6);
   };
   const blurSuggest = (field) => setTimeout(() => setActiveSuggestField(f => f === field ? null : f), 150);
   const SuggestDropdown = ({ field, query }) => {

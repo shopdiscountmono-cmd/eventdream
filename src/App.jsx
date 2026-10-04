@@ -7,7 +7,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordRe
 // ─── VERSION DE L'APPLICATION ─────────────────────────────────────────────────
 // Ce numéro s'affiche en bas des Réglages. Il permet de vérifier qu'on a bien
 // collé la dernière version du code. Incrémenté à chaque mise à jour.
-const APP_VERSION = "v4.3.3 — Fix recherche client (Bibliotheque + suggestion en direct) : accents, casse, format telephone, fiches incompletes (20/08/2026)";
+const APP_VERSION = "v4.3.4 — Rattrapage fiches client manquantes etendu a toutes les commandes (plus seulement web) + autocompletion iPhone desactivee sur formulaire devis (20/08/2026)";
 
 // ─── SYNCHRONISATION FIRESTORE ────────────────────────────────────────────────
 // Chaque jeu de données (commandes, clients, stock...) est stocké dans un
@@ -321,7 +321,15 @@ const STATUS_COLORS = { "Non confirmé": "#f97316", "Brouillon": "#9ca3af", "Dev
 // client incomplètes (nom/téléphone/email manquants) sans jamais planter la recherche.
 const searchNorm = (s) => (s || "").toString().toLowerCase()
   .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // retire les accents
-const phoneNorm = (s) => (s || "").toString().replace(/[^0-9]/g, ""); // ne garde que les chiffres
+// Normalise un numéro pour comparaison : "+33 6 50..." et "06 50..." doivent être reconnus comme
+// le même numéro, peu importe espaces/points/tirets. Utilisé par la recherche client, le
+// rattrapage automatique de fiches manquantes, et la détection "ce client existe déjà".
+const phoneNorm = (s) => {
+  let v = (s || "").toString().replace(/[^0-9+]/g, "");
+  if (v.startsWith("+33")) v = "0" + v.slice(3);
+  else if (v.startsWith("0033")) v = "0" + v.slice(4);
+  return v.replace(/\D/g, "");
+};
 function clientMatchesQuery(c, rawQuery) {
   const q = searchNorm(rawQuery);
   if (!q) return true;
@@ -1115,10 +1123,10 @@ function AddressFields({ label, value, onChange, compact }) {
   return (
     <div>
       {label && <div style={{ fontSize: 12, fontWeight: 700, color: "#444", marginBottom: 6 }}>{label}</div>}
-      <Inp value={parts.rue} onChange={v => upd("rue", v)} placeholder="Numéro et rue" />
+      <Inp value={parts.rue} onChange={v => upd("rue", v)} placeholder="Numéro et rue" autoComplete="off" />
       <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 8, marginTop: compact ? 6 : 8 }}>
-        <Inp value={parts.cp} onChange={v => upd("cp", v)} placeholder="Code postal" />
-        <Inp value={parts.ville} onChange={v => upd("ville", v)} placeholder="Ville" />
+        <Inp value={parts.cp} onChange={v => upd("cp", v)} placeholder="Code postal" autoComplete="off" />
+        <Inp value={parts.ville} onChange={v => upd("ville", v)} placeholder="Ville" autoComplete="off" />
       </div>
       {incomplet && (
         <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginTop: 6 }}>
@@ -1129,7 +1137,7 @@ function AddressFields({ label, value, onChange, compact }) {
   );
 }
 
-function Inp({ label, value, onChange, type = "text", placeholder, required, min, step, suffix, disabled }) {
+function Inp({ label, value, onChange, type = "text", placeholder, required, min, step, suffix, disabled, autoComplete }) {
   // Pour les nombres : on garde un tampon texte local pendant la saisie pour
   // éviter le "0" collé devant (ex: taper 2 quand la valeur est 0 → "20").
   const [focused, setFocused] = useState(false);
@@ -1161,6 +1169,7 @@ function Inp({ label, value, onChange, type = "text", placeholder, required, min
           placeholder={placeholder ?? (isNum ? "0" : undefined)}
           min={min} step={step}
           disabled={disabled}
+          autoComplete={autoComplete}
           style={{ width: "100%", minWidth: 0, maxWidth: "100%", padding: "10px 10px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 16, fontFamily: "inherit", background: disabled ? "#f0f0f0" : "#fafafa", color: disabled ? "#bbb" : "#1a1a2e", WebkitTextFillColor: disabled ? "#bbb" : "#1a1a2e", boxSizing: "border-box", paddingRight: suffix ? 38 : 10, outline: "none", WebkitAppearance: "none", cursor: disabled ? "not-allowed" : "text" }}
           onFocus={e => { e.target.style.borderColor = "#1a1a2e"; if (isNum) { setDraft(cleanNumDisplay(value)); setFocused(true); } }}
           onBlur={e => { e.target.style.borderColor = "#e5e7eb"; setFocused(false); }} />
@@ -2409,11 +2418,11 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div style={{ position: "relative" }} onFocus={() => setActiveSuggestField("name")} onBlur={() => blurSuggest("name")}>
-              <Inp label="Nom complet" value={form.clientName} onChange={v => set("clientName", v)} placeholder="Jean Dupont" required />
+              <Inp label="Nom complet" value={form.clientName} onChange={v => set("clientName", v)} placeholder="Jean Dupont" required autoComplete="off" />
               <SuggestDropdown field="name" query={form.clientName} />
             </div>
             <div style={{ position: "relative" }} onFocus={() => setActiveSuggestField("email")} onBlur={() => blurSuggest("email")}>
-              <Inp label="Email" value={form.clientEmail} onChange={v => set("clientEmail", v)} placeholder="jean@email.com" />
+              <Inp label="Email" value={form.clientEmail} onChange={v => set("clientEmail", v)} placeholder="jean@email.com" autoComplete="off" />
               <SuggestDropdown field="email" query={form.clientEmail} />
             </div>
           </div>
@@ -2449,7 +2458,7 @@ function OrderForm({ initial, onSave, onClose, onAutosave, allOrders, clients, s
                       const phones = (form.clientPhones && form.clientPhones.length ? [...form.clientPhones] : [form.clientPhone || ""]);
                       phones[i] = v;
                       setForm(f => ({ ...f, clientPhone: phones[0] || "", clientPhones: phones }));
-                    }} />
+                    }} autoComplete="off" />
                     {i === 0 && <SuggestDropdown field="phone" query={p} />}
                   </div>
                   {(form.clientPhones && form.clientPhones.length > 1) && (
@@ -5796,28 +5805,35 @@ function AppInner() {
   const [expenses, setExpenses] = useCollectionState("expenses");
   const [clients, setClients] = useCollectionState("clients");
   // ───────────────────────────────────────────────────────────
-  // Synchro fiche client pour les devis créés depuis le formulaire public (devis.html).
-  // BUG CORRIGÉ : la création automatique de fiche client n'existait que dans le formulaire
-  // interne de l'app (à l'enregistrement d'un devis saisi par l'équipe) — un devis arrivé
-  // directement du site web (createdBy: "web-client") écrivait uniquement sur "orders" et
-  // n'apparaissait donc JAMAIS dans Clients, même après confirmation. On répare ça a posteriori :
-  // dès qu'un devis web sans client correspondant (même téléphone) est détecté, sa fiche est créée.
+  // Rattrapage automatique des fiches client manquantes — TOUTES origines de commande.
+  // BUG CORRIGÉ (v2) : ce rattrapage ne couvrait d'abord que les devis venus du site web
+  // (createdBy: "web-client"). Mais un devis saisi directement par l'équipe dans l'app peut, lui
+  // aussi, se retrouver sans fiche client correspondante (version plus ancienne du code au moment
+  // de la création, étape ratée...) — et dans ce cas-là, RIEN ne la recréait jamais : le client
+  // restait introuvable dans la recherche et la Bibliothèque, pour toujours. On couvre maintenant
+  // toutes les commandes, pas seulement celles du site web. Repli sur une correspondance de nom
+  // (exact, insensible à la casse) quand aucun téléphone n'est disponible pour trancher.
   // ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!orders.length) return;
-    const normPhone = (s) => String(s || "").replace(/[\s\-.]/g, "").replace(/^(\+33|0033)/, "0").trim();
-    const webOrders = orders.filter(o => o.createdBy === "web-client" && o.clientPhone);
-    if (!webOrders.length) return;
+    const eligible = orders.filter(o => (o.clientName || "").trim());
+    if (!eligible.length) return;
+    const normName = (s) => (s || "").trim().toLowerCase();
     const toCreate = [];
-    for (const o of webOrders) {
-      const phone = normPhone(o.clientPhone);
-      const exists = clients.some(c => {
-        const phones = [...(c.phones || []), c.phone || ""].map(normPhone).filter(Boolean);
-        return phones.includes(phone);
-      }) || toCreate.some(c => normPhone(c.phone) === phone);
+    for (const o of eligible) {
+      const phone = phoneNorm(o.clientPhone);
+      const name = normName(o.clientName);
+      const matches = (c) => {
+        if (phone) {
+          const phones = [...(c.phones || []), c.phone || ""].map(phoneNorm).filter(Boolean);
+          if (phones.includes(phone)) return true;
+        }
+        return !phone && normName(c.name) === name;
+      };
+      const exists = clients.some(matches) || toCreate.some(matches);
       if (!exists) {
         const addr = (o.address || "").trim();
-        toCreate.push({ id: "cli-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6), name: o.clientName || "Client web", phone: o.clientPhone, phones: [o.clientPhone], email: o.clientEmail || "", address: addr, addresses: addr ? [addr] : [], notes: "" });
+        toCreate.push({ id: "cli-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6), name: o.clientName || "Client", phone: o.clientPhone || "", phones: o.clientPhone ? [o.clientPhone] : [], email: o.clientEmail || "", address: addr, addresses: addr ? [addr] : [], notes: "" });
       }
     }
     if (toCreate.length) setClients(prev => [...prev, ...toCreate]);
@@ -6587,7 +6603,20 @@ function AppInner() {
             // automatiquement la prochaine fois. Sinon, la fiche client est créée.
             setClients(prev => {
               const addr = (order.address || "").trim();
-              const existant = prev.find(c => c.name === order.clientName && c.phone === order.clientPhone);
+              // Le téléphone (normalisé, comparé sur TOUS les numéros connus du client, pas
+              // seulement l'ancien champ unique) est la clé la plus fiable : deux personnes
+              // différentes partagent très rarement le même numéro, alors que les noms se
+              // répètent. On ne retombe sur une correspondance de nom que si aucun téléphone
+              // n'est saisi sur ce devis.
+              const orderPhone = phoneNorm(order.clientPhone);
+              const existant = prev.find(c => {
+                if (orderPhone) {
+                  const phones = [...(c.phones || []), c.phone || ""].map(phoneNorm).filter(Boolean);
+                  if (phones.includes(orderPhone)) return true;
+                  return false;
+                }
+                return (c.name || "").trim().toLowerCase() === (order.clientName || "").trim().toLowerCase();
+              });
               if (existant) {
                 if (!addr) return prev;
                 const dejaConnues = (existant.addresses && existant.addresses.length ? existant.addresses : (existant.address ? [existant.address] : [])).filter(Boolean);
